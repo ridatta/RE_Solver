@@ -141,6 +141,27 @@ def getDreicerSourceM3DC1(E_star,ne,T,Zeff):
     sd = ne*nu*x**(-3.0e0*(1.0e0+Zeff)/1.6e1) *np.exp(-1.0e0/(4*x)-np.sqrt((1.0e0+Zeff)/x))
     return sd
 
+def getf_beta(W):
+    # Returns the tritium beta energy distribution
+    # W = electron energy in keV
+    Wmax = 18.6 # [kJ]
+    p = ((W*1e3*const.eV/(const.m_e*const.c**2)+1)**2 -1)**0.5 # v/c in terms of W [-]
+    gamma = np.sqrt(p**2+1) # [-]
+    WW = const.m_e * const.c**2 * gamma / (1.3 * const.eV)  # keV
+    
+    # Calculate F #
+    Zf = 2
+    alpha = 1/137
+    beta = p / gamma
+    c0 = 2 * np.pi * alpha * Zf
+    c1 = beta * (1-np.exp(-c0/beta))
+    F = c0 / c1
+    
+    f_ana = F * p * WW * (Wmax - W)**2
+    
+    # normalize 
+    tot = np.trapz(f_ana,W)
+    return 1/tot * f_ana
 
 def getTritBetaDecay(nT,E_star):
     # E_star = electric field / Connor-hastie Field
@@ -150,16 +171,22 @@ def getTritBetaDecay(nT,E_star):
     tau_T = 4500 * 24 * 3600 # [s], tritium half life
     Wc = getCriticalRunawayEnergy(E_star) # J
     Wc = Wc / const.eV * 1e-3 # keV
+    
     # Load tritium beta spectrum
     data = np.loadtxt('./RE_Solver/data/trit_beta.csv',delimiter=',')
     E = data[:,0]
     f_beta = data[:,1] / 9.1885835
+    # Analytical Spectrum 
+    # E = np.linspace(0.1,18.6,200) # eV
+    # f_beta = getf_beta(E)
+    
     F_beta = np.trapz(f_beta[np.where(E>=Wc)],x=E[np.where(E>=Wc)]) # Fraction of beta electrons w energy > critical runaway energy
     return np.log(2) * nT / tau_T * F_beta # m**-3/s
 
-def getComptonSource(E_star,ne):
+def getComptonSource(E_star,ne,device='ITER'):
      # E_star = electric field / Connor-hastie Field
      # ne = total electron denisty n_free + n_bound [m**-3]
+    # device = [ITER,SPARC]
     
     E_gamma = np.logspace(-2,1.477,1000) # Gamma energies [MeV]
 
@@ -177,10 +204,16 @@ def getComptonSource(E_star,ne):
     sigma =  (3 * sigma_T / 8) * (term1 + term2 + term3) # Compton x-section m**2
     sigma[np.where(np.isnan(sigma))] = 0.0
 
-    # Normalized Gamma Flux Spectrum [per MeV]
-    z = (np.log(E_gamma) + 1.2) 
-    Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
-
+    if device == 'ITER':
+        # Normalized Gamma Flux Spectrum [per MeV]
+        z = (np.log(E_gamma) + 1.2) 
+        Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
+    elif device == 'SPARC':
+        data = np.loadtxt('./RE_Solver/data/SPARC_Gamma_Flux.csv')
+        from scipy.interpolate import interp1d
+        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
+        Gamma = f(E_gamma) # [#/m**2/s/MeV]
+        
     S =  ne * np.trapz(Gamma * sigma, x=E_gamma)
     return S
 
