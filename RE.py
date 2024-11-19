@@ -27,7 +27,7 @@ def getCriticalRunawayEnergy(E_star):
     # E_star = electric field / Connor-hastie Field
     # ne = density [m**-3/s]
     # lnA = coulomb log
-    return const.m_e * const.c**2 / (2 * E_star) # J
+    return const.m_e * const.c**2 * ( (1+1/E_star)**0.5 - 1) # J
 
 def getInternalInductance(jp,r,R0):
     # Returns normalized and internal plasma inductance in 1-D circular geometry
