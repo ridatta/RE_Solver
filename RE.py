@@ -151,7 +151,7 @@ def getTritBetaDecay(nT,E_star):
     Wc = getCriticalRunawayEnergy(E_star) # J
     Wc = Wc / const.eV * 1e-3 # keV
     # Load tritium beta spectrum
-    data = np.loadtxt('./data/trit_beta.csv',delimiter=',')
+    data = np.loadtxt('./RE_Solver/data/trit_beta.csv',delimiter=',')
     E = data[:,0]
     f_beta = data[:,1] / 9.1885835
     F_beta = np.trapz(f_beta[np.where(E>=Wc)],x=E[np.where(E>=Wc)]) # Fraction of beta electrons w energy > critical runaway energy
