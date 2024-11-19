@@ -129,7 +129,14 @@ def getDreicerSourceM3DC1(E_star,ne,T,Zeff):
     nu = ne*const.e**4*lnA/(4*np.pi*const.epsilon_0**2*const.m_e**2*vth**3)
     
     E_CH = getConnorHastieField(ne,lnA)
-    E = E_CH * E_star
+    
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-5
+    else:
+        alpha = np.max(np.array([E_star,1+1e-5]))
+    
+    E = E_CH * alpha
     x = (np.abs(E)*const.e*T)/(E_CH*const.m_e*const.c**2)
     sd = ne*nu*x**(-3.0e0*(1.0e0+Zeff)/1.6e1) *np.exp(-1.0e0/(4*x)-np.sqrt((1.0e0+Zeff)/x))
     return sd
@@ -177,17 +184,7 @@ def getComptonSource(E_star,ne):
     S =  ne * np.trapz(Gamma * sigma, x=E_gamma)
     return S
 
-def getHotTailSeed(n0,T0,lnA,E0,t0):
-    # n0 = per m cubed; pre-TQ density 
-    # T0 = eV, pre-TQ temp.
-    # lnA = Coul. log
-    # t0 = TQ time [s]
-    vth = np.sqrt(T0*const.eV/const.m_e) # Pre-TQ electron thermal velocity
-    nu0 = n0 * const.e**4 * lnA / (4 * np.pi * const.epsilon_0**2 * const.m_e**2 * vth**3) # per s, collison freq.
-    ED0 = getDreicerField(n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
-    uc = (t0 * nu0 * (2 * np.log(ED0/E0) - 4/3*np.log(4/3*t0*nu0) - 5/3))**(1/3)
-    nr = n0 * 2/np.sqrt(np.pi) * uc * np.exp(-uc**2) # per m cubed; runaway electron density
-    return nr    
+    
 
 ### Avalanche Growth Rate ###
 
