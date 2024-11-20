@@ -183,6 +183,23 @@ def getTritBetaDecay(nT,E_star):
     F_beta = np.trapz(f_beta[np.where(E>=Wc)],x=E[np.where(E>=Wc)]) # Fraction of beta electrons w energy > critical runaway energy
     return np.log(2) * nT / tau_T * F_beta # m**-3/s
 
+def getScatteringXSection(E_gamma,Wc):
+    # Wc in MeV
+    # Output in m**2
+    sigma_T = 6.6e-29 # Thomson x-section m**2
+    val = 1 - const.m_e*const.c**2/(E_gamma * 1e6 * const.eV) * (Wc/E_gamma)/(1-(Wc/E_gamma))
+    theta_e = np.ones_like(E_gamma) * float('nan')
+    idx = np.argwhere(np.abs(val)<=1)
+    theta_e[idx] = np.arccos(val[idx]) # Critical Scattering angle [rad]
+    x = (E_gamma * 1e6 * const.eV)  / (const.m_e * const.c**2)
+    term1 = (x**2 - 2*x - 2) / x**3 * np.log((1 + 2*x) / (1 + x * (1 - np.cos(theta_e))))
+    term2 = 1 / (2*x) * (1 / (1 + x * (1 - np.cos(theta_e)))**2 - 1 / (1 + 2*x)**2)
+    term3 = -1 / x**3 * (1 - x - (1 + 2*x) / (1 + x * (1 - np.cos(theta_e))) - x * np.cos(theta_e))
+    sigma =  (3 * sigma_T / 8) * (term1 + term2 + term3) # Compton x-section m**2
+    sigma[np.isnan(sigma)] = 0
+
+    return sigma
+
 def getComptonSource(E_star,ne,device='ITER'):
      # E_star = electric field / Connor-hastie Field
      # ne = total electron denisty n_free + n_bound [m**-3]
@@ -193,16 +210,7 @@ def getComptonSource(E_star,ne,device='ITER'):
     Wc = getCriticalRunawayEnergy(E_star) # J
     Wc = Wc / const.eV * 1e-6 # MeV
     
-
-    # Scattering X-Section
-    sigma_T = 6.6e-29 # Thomson x-section m**2
-    theta_e = np.arccos(1 - const.m_e*const.c**2/(E_gamma * 1e6 * const.eV) * (Wc/E_gamma)/(1-(Wc/E_gamma))) # Critical Scattering angle [rad]
-    x = (E_gamma * 1e6 * const.eV)  / (const.m_e * const.c**2)
-    term1 = (x**2 - 2*x - 2) / x**3 * np.log((1 + 2*x) / (1 + x * (1 - np.cos(theta_e))))
-    term2 = 1 / (2*x) * (1 / (1 + x * (1 - np.cos(theta_e)))**2 - 1 / (1 + 2*x)**2)
-    term3 = -1 / x**3 * (1 - x - (1 + 2*x) / (1 + x * (1 - np.cos(theta_e))) - x * np.cos(theta_e))
-    sigma =  (3 * sigma_T / 8) * (term1 + term2 + term3) # Compton x-section m**2
-    sigma[np.where(np.isnan(sigma))] = 0.0
+    sigma = getScatteringXSection(E_gamma,Wc)
 
     if device == 'ITER':
         # Normalized Gamma Flux Spectrum [per MeV]
