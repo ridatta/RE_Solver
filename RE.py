@@ -27,7 +27,7 @@ def getCriticalRunawayEnergy(E_star):
     # E_star = electric field / Connor-hastie Field
     # ne = density [m**-3/s]
     # lnA = coulomb log
-    return const.m_e * const.c**2 * ( (1+1/E_star)**0.5 - 1) # J
+    return const.m_e * const.c**2 * ((1-E_star**(-1))**(-1/2)-1) # [J]
 
 def getInternalInductance(jp,r,R0):
     # Returns normalized and internal plasma inductance in 1-D circular geometry
@@ -145,9 +145,10 @@ def getf_beta(W):
     # Returns the tritium beta energy distribution
     # W = electron energy in keV
     Wmax = 18.6 # [kJ]
-    p = ((W*1e3*const.eV/(const.m_e*const.c**2)+1)**2 -1)**0.5 # v/c in terms of W [-]
+    w = (W * 1e3 * const.eV) / (const.m_e * const.c**2) # [-]
+    p = ((w+1)**2-1)**(1/2)
     gamma = np.sqrt(p**2+1) # [-]
-    WW = const.m_e * const.c**2 * gamma / (1.3 * const.eV)  # keV
+    WW = const.m_e * const.c**2 * gamma / (1e3 * const.eV)  # keV
     
     # Calculate F #
     Zf = 2
@@ -168,20 +169,71 @@ def getTritBetaDecay(nT,E_star):
     # Wc = critical runaway energy [keV]
     # nT = tritium denisty [m**-3]
     
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-5
+    else:
+        alpha = np.max(np.array([E_star,1+1e-5]))
+    
     tau_T = 4500 * 24 * 3600 # [s], tritium half life
-    Wc = getCriticalRunawayEnergy(E_star) # J
+    Wc = getCriticalRunawayEnergy(alpha) # J
     Wc = Wc / const.eV * 1e-3 # keV
     
     # Load tritium beta spectrum
-    data = np.loadtxt('./RE_Solver/data/trit_beta.csv',delimiter=',')
-    E = data[:,0]
-    f_beta = data[:,1] / 9.1885835
+#     data = np.loadtxt('./RE_Solver/data/trit_beta.csv',delimiter=',')
+#     E = data[:,0]
+#     f_beta = data[:,1] / 9.1885835
+
     # Analytical Spectrum 
-    # E = np.linspace(0.1,18.6,200) # eV
-    # f_beta = getf_beta(E)
+    E = np.linspace(0.1,18.6,200) # eV
+    f_beta = getf_beta(E)
     
-    F_beta = np.trapz(f_beta[np.where(E>=Wc)],x=E[np.where(E>=Wc)]) # Fraction of beta electrons w energy > critical runaway energy
+    if isinstance(Wc, np.ndarray): # Get Fraction of beta electrons w energy > critical runaway energy
+        F_beta = np.zeros_like(Wc)
+        for ii in range(Wc.shape[0]):
+            F_beta[ii] = np.trapz(f_beta[np.where(E>=Wc[ii])],x=E[np.where(E>=Wc[ii])])
+    else:
+         F_beta = np.trapz(f_beta[np.where(E>=Wc)],x=E[np.where(E>=Wc)])
+    
     return np.log(2) * nT / tau_T * F_beta # m**-3/s
+
+
+
+
+def getComptonSource(E_star,ne,device='ITER'):
+     # E_star = electric field / Connor-hastie Field
+     # ne = total electron denisty n_free + n_bound [m**-3]
+    # device = [ITER,SPARC]
+    
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-5
+    else:
+        alpha = np.max(np.array([E_star,1+1e-5]))
+
+    Wc = getCriticalRunawayEnergy(alpha) # J
+    Wc = Wc / const.eV * 1e-6 # MeV
+
+    E_gamma = np.logspace(-2,1.477,1000) # Gamma energies [MeV]
+    if device == 'ITER':
+        # Normalized Gamma Flux Spectrum [per MeV]
+        z = (np.log(E_gamma) + 1.2) 
+        Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
+    elif device == 'SPARC':
+        data = np.loadtxt('./RE_Solver/data/SPARC_Gamma_Flux.csv')
+        from scipy.interpolate import interp1d
+        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
+        Gamma = f(E_gamma) # [#/m**2/s/MeV]
+        
+    if isinstance(Wc, np.ndarray):
+        S = np.zeros_like(Wc)
+        for ii in range(Wc.shape[0]):
+            sigma = getScatteringXSection(E_gamma,Wc[ii]) # scattering x-section vs photon energy
+            S[ii] =  ne * np.trapz(Gamma * sigma, x=E_gamma)
+    else:
+        sigma = getScatteringXSection(E_gamma,Wc) # scattering x-section vs photon energy
+        S =  ne * np.trapz(Gamma * sigma, x=E_gamma) 
+    return S
 
 def getScatteringXSection(E_gamma,Wc):
     # Wc in MeV
@@ -199,33 +251,6 @@ def getScatteringXSection(E_gamma,Wc):
     sigma[np.isnan(sigma)] = 0
 
     return sigma
-
-def getComptonSource(E_star,ne,device='ITER'):
-     # E_star = electric field / Connor-hastie Field
-     # ne = total electron denisty n_free + n_bound [m**-3]
-    # device = [ITER,SPARC]
-    
-    E_gamma = np.logspace(-2,1.477,1000) # Gamma energies [MeV]
-
-    Wc = getCriticalRunawayEnergy(E_star) # J
-    Wc = Wc / const.eV * 1e-6 # MeV
-    
-    sigma = getScatteringXSection(E_gamma,Wc)
-
-    if device == 'ITER':
-        # Normalized Gamma Flux Spectrum [per MeV]
-        z = (np.log(E_gamma) + 1.2) 
-        Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
-    elif device == 'SPARC':
-        data = np.loadtxt('./RE_Solver/data/SPARC_Gamma_Flux.csv')
-        from scipy.interpolate import interp1d
-        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
-        Gamma = f(E_gamma) # [#/m**2/s/MeV]
-        
-    S =  ne * np.trapz(Gamma * sigma, x=E_gamma)
-    return S
-
-    
 
 ### Avalanche Growth Rate ###
 
