@@ -27,7 +27,14 @@ def getCriticalRunawayEnergy(E_star):
     # E_star = electric field / Connor-hastie Field
     # ne = density [m**-3/s]
     # lnA = coulomb log
-    return const.m_e * const.c**2 * ((1-E_star**(-1))**(-1/2)-1) # [J]
+    
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
+    else:
+        alpha = np.max(np.array([E_star,1+1e-6]))
+    
+    return const.m_e * const.c**2 * ((1-alpha**(-1))**(-1/2)-1) # [J]
 
 def getInternalInductance(jp,r,R0):
     # Returns normalized and internal plasma inductance in 1-D circular geometry
@@ -66,10 +73,10 @@ def getDreicerSource(E_star,ne,lnA,Z,T):
     vth = np.sqrt(T/m) # m/s
     
     if isinstance(E_star, np.ndarray):
-        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
-        alpha[np.where(alpha<1)]=1 + 1e-5
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
     else:
-        alpha = np.max(np.array([E_star,1+1e-5]))
+        alpha = np.max(np.array([E_star,1+1e-6]))
     
         
     ED = e**3 * ne * lnA / (T * 4 * np.pi * const.epsilon_0**2) # N/C, Dreicer field
@@ -131,10 +138,10 @@ def getDreicerSourceM3DC1(E_star,ne,T,Zeff):
     E_CH = getConnorHastieField(ne,lnA)
     
     if isinstance(E_star, np.ndarray):
-        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
-        alpha[np.where(alpha<1)]=1 + 1e-5
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
     else:
-        alpha = np.max(np.array([E_star,1+1e-5]))
+        alpha = np.max(np.array([E_star,1+1e-6]))
     
     E = E_CH * alpha
     x = (np.abs(E)*const.e*T)/(E_CH*const.m_e*const.c**2)
@@ -170,10 +177,10 @@ def getTritBetaDecay(nT,E_star):
     # nT = tritium denisty [m**-3]
     
     if isinstance(E_star, np.ndarray):
-        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
-        alpha[np.where(alpha<1)]=1 + 1e-5
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
     else:
-        alpha = np.max(np.array([E_star,1+1e-5]))
+        alpha = np.max(np.array([E_star,1+1e-6]))
     
     tau_T = 4500 * 24 * 3600 # [s], tritium half life
     Wc = getCriticalRunawayEnergy(alpha) # J
@@ -206,10 +213,10 @@ def getComptonSource(E_star,ne,device='ITER'):
     # device = [ITER,SPARC]
     
     if isinstance(E_star, np.ndarray):
-        alpha = E_star # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
-        alpha[np.where(alpha<1)]=1 + 1e-5
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
     else:
-        alpha = np.max(np.array([E_star,1+1e-5]))
+        alpha = np.max(np.array([E_star,1+1e-6]))
 
     Wc = getCriticalRunawayEnergy(alpha) # J
     Wc = Wc / const.eV * 1e-6 # MeV
@@ -252,6 +259,19 @@ def getScatteringXSection(E_gamma,Wc):
 
     return sigma
 
+def getHotTailSeed(n0,T0,lnA,E0,t0):
+    # n0 = per m cubed; pre-TQ density 
+    # T0 = eV, pre-TQ temp.
+    # lnA = Coul. log
+    # E0 = initial electro cfield [N/C]
+    # t0 = TQ time [s]
+    vth = np.sqrt(T0*const.eV/const.m_e) # Pre-TQ electron thermal velocity
+    nu0 = n0 * const.e**4 * lnA / (4 * np.pi * const.epsilon_0**2 * const.m_e**2 * vth**3) # per s, collison freq.
+    ED0 = getDreicerField(n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
+    uc = (t0 * nu0 * (2 * np.log(ED0/E0) - 4/3*np.log(4/3*t0*nu0) - 5/3))**(1/3)
+    nr = n0 * 2/np.sqrt(np.pi) * uc * np.exp(-uc**2) # per m cubed; runaway electron density
+    return nr # per m cubed
+
 ### Avalanche Growth Rate ###
 
 def get_avalance_growth_rate_CH(E_star,ne,inv_aspect_ratio,lnA,Z):
@@ -263,12 +283,18 @@ def get_avalance_growth_rate_CH(E_star,ne,inv_aspect_ratio,lnA,Z):
     e = const.e # C 
     c = const.c # m/s
     
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 
+    else:
+        alpha = np.max(np.array([E_star,1]))
+    
     Ec = e**3 * ne * lnA / (m * c**2 * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
    
     fp = 1 - 1.46 * np.sqrt(inv_aspect_ratio)
-    A = E_star - 1 - 0.2 * (Z+1)/(Z+5)
-    B = 1/(E_star**2 + 3*(Z+1)**2/(Z+5))
-    return e * Ec * E_star / ( m * c *lnA) * np.sqrt(E_star * A * fp * B / (Z+5)) # per second
+    A = alpha - 1 - 0.2 * (Z+1)/(Z+5)
+    B = 1/(alpha**2 + 3*(Z+1)**2/(Z+5))
+    return e * Ec * alpha / ( m * c *lnA) * np.sqrt(alpha * A * fp * B / (Z+5)) # per second
 
 def get_avalance_growth_rate_RP(E_star,ne,inv_aspect_ratio,lnA,Z):
     # Rosenbluth-Putviski formual from Chiu-Harvey 1998
@@ -280,18 +306,30 @@ def get_avalance_growth_rate_RP(E_star,ne,inv_aspect_ratio,lnA,Z):
     e = const.e # C 
     c = const.c # m/s
     
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 
+    else:
+        alpha = np.max(np.array([E_star,1]))
+    
     # Caluclate tau [s]
     
     Ec = e**3 * ne * lnA / (m * c**2 * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
-    gamma_minus1 = e * Ec / (2 * m * c * lnA) * (E_star - 1)
+    gamma_minus1 = e * Ec / (2 * m * c * lnA) * (alpha - 1)
     fp = 1 - 1.46 * np.sqrt(inv_aspect_ratio)
     g = 1 + 4 * (Z+1)**2 / (fp * (Z+5))
-    H = g / (E_star**2 -1 + ((Z+5)*g/(fp*(Z+1)**2)))
-    return gamma_minus1 * np.sqrt( 4 * fp / ((Z+5) * (1 - E_star**-2 + H))) # per second
+    H = g / (alpha**2 -1 + ((Z+5)*g/(fp*(Z+1)**2)))
+    return gamma_minus1 * np.sqrt( 4 * fp / ((Z+5) * (1 - alpha**-2 + H))) # per second
 
 def get_avalance_growth_rate_RP2(E_star,ne,inv_aspect_ratio,lnA,Z):
     # From Breizman 2019 / Rosenbluth 1997
     # All units in SI
+    
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 
+    else:
+        alpha = np.max(np.array([E_star,1]))
     
     # Constants
     m = const.m_e # kg
@@ -303,10 +341,10 @@ def get_avalance_growth_rate_RP2(E_star,ne,inv_aspect_ratio,lnA,Z):
     tau =  m * c / (e * Ec) # s
     a = (1 + 1.46 * inv_aspect_ratio**0.5 + 1.72 * inv_aspect_ratio)**(-1)
     
-    c1 = 1 /(tau * lnA) * np.sqrt(np.pi * a / (3*(Z+5))) * (E_star-1)
-    c2 = 1 - E_star**(-1) 
+    c1 = 1 /(tau * lnA) * np.sqrt(np.pi * a / (3*(Z+5))) * (alpha-1)
+    c2 = 1 - alpha**(-1) 
     c3 = 4 * np.pi * (Z+1)**2
-    c4 = 3 * a * (Z + 5) * (E_star**2 + 4/a**2 - 1)
+    c4 = 3 * a * (Z + 5) * (alpha**2 + 4/a**2 - 1)
 
     return c1 * (c2 + c3/c4)**(-1/2) # per second
 
