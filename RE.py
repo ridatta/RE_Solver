@@ -279,7 +279,7 @@ def getDreicerRateHesslow(nD,nI,ZmaxI,ZI,EoED,T):
     
     tau = get_tau_ee(nfree,T)
     
-    return G / tau # [per cubic m]
+    return nfree * G / tau # [per cubic m / s]
 
 def forward_nn_rotated(X,m_nodes,weights,biases):
     # X = input [n_input x num_instances]
