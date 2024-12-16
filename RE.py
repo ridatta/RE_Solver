@@ -14,6 +14,15 @@ def getConnorHastieField(ne,lnA):
     c = const.c # m/s
     return  e**3 * ne * lnA / (m * c**2 * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
 
+    # ne = density [m**-3/s]
+    # lnA = coulomb log
+    # Constants
+    m = const.m_e # kg
+    e = const.e # C 
+    c = const.c # m/s
+    T = T * const.eV # J
+    return  e**3 * ne * lnA / (T * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
+
 def getDreicerField(ne,lnA,T):
     # ne = density [m**-3/s]
     # lnA = coulomb log
@@ -23,6 +32,7 @@ def getDreicerField(ne,lnA,T):
     c = const.c # m/s
     T = T * const.eV # J
     return  e**3 * ne * lnA / (T * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
+
 
 def getCriticalRunawayEnergy(E_star):
     # E_star = electric field / Connor-hastie Field
@@ -207,13 +217,19 @@ def getDreicerSourceV2(E_star,ne,lnA,Z,T):
     e = const.e # C 
     c = const.c # m/s
     
+    if isinstance(E_star, np.ndarray):
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+        alpha[np.where(alpha<1)]=1 + 1e-6
+    else:
+        alpha = np.max(np.array([E_star,1+1e-6]))
+    
     T = T * const.eV # J
     vth = np.sqrt(1*T/m) # m/s
     fee = e**4 * ne * lnA / (4 * np.pi * const.epsilon_0**2) / (m**2 * vth**3) # collison freq. [s^-1]
     
     Ec = e**3 * ne * lnA / (m * c**2 * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
     ED = e**3 * ne * lnA / (T * 4 * np.pi * const.epsilon_0**2) # N/C, Dreicer field
-    E = E_star * Ec
+    E = alpha * Ec
     epsilon = E/ED
     c1 = -3 * (Z+1) / 16
     A = 0.21 + 0.11*Z
@@ -430,7 +446,8 @@ def getHotTailSeed(n0,T0,lnA,E0,t0):
     E0= E0 + 1e-8 # add a small value to prevent zeros
     vth = np.sqrt(T0*const.eV/const.m_e) # Pre-TQ electron thermal velocity
     nu0 = n0 * const.e**4 * lnA / (4 * np.pi * const.epsilon_0**2 * const.m_e**2 * vth**3) # per s, collison freq.
-    ED0 = getDreicerField(n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
+    ED0 = get
+    (n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
     uc = (t0 * nu0 * (2 * np.log(ED0/E0) - 4/3*np.log(4/3*t0*nu0) - 5/3))**(1/3)
     nr = n0 * 2/np.sqrt(np.pi) * uc * np.exp(-uc**2) # per m cubed; runaway electron density
     return nr # per m cubed
