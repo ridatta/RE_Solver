@@ -414,11 +414,11 @@ def getComptonSource(E_star,ne,device='ITER'):
         S = np.zeros_like(Wc)
         for ii in range(Wc.shape[0]):
             sigma = getScatteringXSection(E_gamma,Wc[ii]) # scattering x-section vs photon energy
-            S[ii] =  ne * np.trapz(Gamma * sigma, x=E_gamma)
+            S[ii] =  np.trapz(Gamma * sigma, x=E_gamma)
     else:
         sigma = getScatteringXSection(E_gamma,Wc) # scattering x-section vs photon energy
-        S =  ne * np.trapz(Gamma * sigma, x=E_gamma) 
-    return S
+        S =  np.trapz(Gamma * sigma, x=E_gamma) 
+    return ne * S
 
 def getScatteringXSection(E_gamma,Wc):
     # Wc in MeV
