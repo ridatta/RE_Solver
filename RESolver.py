@@ -2,7 +2,7 @@ import numpy as np
 from RE import *
 import scipy.constants as const
 
-def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0):
+def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0):
     # constants = [rmax, R0, ne, T, Zeff, lnA, eta]
                 # where rmax [m] = minor radius
                 # R0 [m] = major radius
@@ -14,7 +14,7 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,1],cre=0.1*3
     # init_conditions = [jp0, jr0] [A/m**2] Initial plasma and RE current density
     # tmax = end time [s]
     # CFL = CFL Number 
-    # RE_sources = [iDreicer, iAvalanche] if = 1 turns on the source, if 0 turns off the source
+    # RE_sources = [iDreicer, iTritBeta, iCompton, iAvalanche] if = 1 turns on the source, if 0 turns off the source
     # cre [m/s] = RE velocity
     # nprint = # of time steps to store results
     # verbose = if true print details
@@ -35,23 +35,26 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,1],cre=0.1*3
     print('Ir (t = 0) [MA] = %1.3g\n'%(2*np.pi*np.trapz(jr*r,x=r)*1e-6))
 
     ## Runaway Settings ###
-    iDreicer, iAvalanche = RE_sources
-    print("iDreicer = %d, iAvalanche = %d\n"%(iDreicer, iAvalanche))
+    iDreicer, iTritBeta, iCompton, iAvalanche = RE_sources
+    print("iDreicer = %d,iTritBeta = %d, iCompton = %d, iAvalanche = %d\n"%(iDreicer, iTritBeta, iCompton, iAvalanche))
     print("Runaway Velocity [m/s]= %1.4g\n"%cre) # Runaway electron velocity [m/s]
 
     ## Numerical Settings ##
     U = np.max(eta/const.mu_0) / dr # resistive diffusion velocity, m/s
-    # Calculate the Expected Dreicer Rate, [s^-1]
-    if iDreicer:
-        gamma_Dreicer = (1/ne * getDreicerSource(eta*(jp-jr)/getConnorHastieField(ne,lnA),ne,lnA,Zeff,T))
-    else:
-        gamma_Dreicer = 1e-15 # Set to small value
-    tau_Dreicer = 1/np.max(gamma_Dreicer) # [s]
-    dt = np.min([dr * CFL / U,CFL*tau_Dreicer]) # Take the smaller time
+    # Calculate the Expected Primary Rate, [s^-1]
+    Estar = eta*(jp-jr)/getConnorHastieField(ne,lnA)
+    gamma_Dreicer = iDreicer * (1/ne * getDreicerSource(Estar,ne,lnA,Zeff,T))
+    gamma_Beta = iTritBeta * 1/(0.5*ne) * getTritBetaDecay(0.5*ne,Estar)
+    gamma_Comp = iCompton * 1/ne * getComptonSource(Estar,ne,device='SPARC')
+    gamma = gamma_Dreicer + gamma_Beta + gamma_Comp
+    if (iDreicer & iTritBeta & iCompton) == 0:
+        gamma = 1e-15 # Set to small value
+    tau = 1/np.max(gamma) # [s]
+    dt = np.min([dr * CFL / U,CFL*tau]) # Take the smaller time
     print("Time Step dt [ms] = %1.3g\n"%(dt*1e3))
 
     # Expected Seed Value #
-    jseed = cre * const.e * ne * gamma_Dreicer * dt + jr # A/m**2
+    jseed = cre * const.e * ne * gamma * dt + jr # A/m**2
 
     print('Seed Ir(t=dt) [MA] = %1.3g\n'%(1e-6*2*np.pi*np.trapz(jseed*r,x=r)))
 
@@ -73,10 +76,13 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,1],cre=0.1*3
         if tnow >= RE_start:
             E_star = E / getConnorHastieField(ne,lnA) # Normalized E-field
             SD = iDreicer * getDreicerSource(E_star,ne,lnA,Zeff,T) # Dreicer Source, m**-3/s
+            ST = iTritBeta * getTritBetaDecay(0.5*ne,E_star) # Beta Source, m**-3/s
+            SC = iCompton * getComptonSource(E_star,ne,device='SPARC') # Compton Source, m**-3/s
+            S_primary = SD + SC + ST
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
-            SD = np.zeros_like(E)
+            S_primary = np.zeros_like(E)
             
 
         # avlanche operator used in Martin-Solis (2017)
@@ -91,7 +97,7 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,1],cre=0.1*3
 
         # Update 
         jp[1:-1] = jp[1:-1] + dt/const.mu_0 * (d2Edr2[1:-1] + 1/r[1:-1] * dEdr[1:-1])
-        jr[1:-1] = jr[1:-1] +  dt * gamma_av[1:-1]  * jr[1:-1]  + dt * (cre * const.e) * SD[1:-1]
+        jr[1:-1] = jr[1:-1] +  dt * gamma_av[1:-1]  * jr[1:-1]  + dt * (cre * const.e) * S_primary[1:-1]
 
         # Update BCs
         jp[0] = jp[1] # No gradient

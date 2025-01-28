@@ -463,11 +463,12 @@ def get_avalance_growth_rate_CH(E_star,ne,inv_aspect_ratio,lnA,Z):
     e = const.e # C 
     c = const.c # m/s
     
+    val = 1 + 0.2 * (Z+1)/(Z+5)
     if isinstance(E_star, np.ndarray):
-        alpha = E_star.copy() # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
-        alpha[np.where(alpha<1)]=1 
+        alpha = E_star.copy() # Field normalized by Conor-Hastie field
+        alpha[np.where(alpha<val)]=val+1e-6
     else:
-        alpha = np.max(np.array([E_star,1]))
+        alpha = np.max(np.array([E_star,val+1e-6]))
     
     Ec = e**3 * ne * lnA / (m * c**2 * 4 * np.pi * const.epsilon_0**2) # N/C, Connor hastie
    
