@@ -43,12 +43,13 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     U = np.max(eta/const.mu_0) / dr # resistive diffusion velocity, m/s
     # Calculate the Expected Primary Rate, [s^-1]
     Estar = eta*(jp-jr)/getConnorHastieField(ne,lnA)
-    gamma_Dreicer = iDreicer * (1/ne * getDreicerSource(Estar,ne,lnA,Zeff,T))
-    gamma_Beta = iTritBeta * 1/(0.5*ne) * getTritBetaDecay(0.5*ne,Estar)
-    gamma_Comp = iCompton * 1/ne * getComptonSource(Estar,ne,device='SPARC')
-    gamma = gamma_Dreicer + gamma_Beta + gamma_Comp
-    if (iDreicer & iTritBeta & iCompton) == 0:
-        gamma = 1e-15 # Set to small value
+    gamma = 1e-15
+    if iDreicer:
+        gamma = gamma + (1/ne * getDreicerSource(Estar,ne,lnA,Zeff,T))
+    if iTritBeta:
+        gamma = gamma + analy_beta_source(Estar)
+    if iCompton:
+        gamma = gamma + analy_compton_source(Estar)
     tau = 1/np.max(gamma) # [s]
     dt = np.min([dr * CFL / U,CFL*tau]) # Take the smaller time
     print("Time Step dt [ms] = %1.3g\n"%(dt*1e3))
@@ -75,10 +76,13 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
         
         if tnow >= RE_start:
             E_star = E / getConnorHastieField(ne,lnA) # Normalized E-field
-            SD = iDreicer * getDreicerSource(E_star,ne,lnA,Zeff,T) # Dreicer Source, m**-3/s
-            ST = iTritBeta * getTritBetaDecay(0.5*ne,E_star) # Beta Source, m**-3/s
-            SC = iCompton * getComptonSource(E_star,ne,device='SPARC') # Compton Source, m**-3/s
-            S_primary = SD + SC + ST
+            S_primary = np.zeros_like(E)
+            if iDreicer:
+                S_primary = S_primary + getDreicerSource(E_star,ne,lnA,Zeff,T) # Dreicer Source, m**-3/s
+            if iTritBeta:
+                S_primary = S_primary + 0.5 * ne * analy_beta_source(E_star) # Beta Source, m**-3/s
+            if iCompton:
+                S_primary =  S_primary + ne * analy_compton_source(E_star) # Compton Source, m**-3/s
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
@@ -118,7 +122,8 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             li.append(getInternalInductance(jp,r,R0)[0])
             # Print
             if verbose:
-                print("step = %d, time [ms] = %1.2f, Ip [MA] = %1.2f\n"%(numsteps,tnow*1e3,Ip[-1]*1e-6))
+                print("step = %d, time [ms] = %1.2f, Ip [MA] = %1.2f, E/Ec [-] = %1.2f\n"
+                      %(numsteps,tnow*1e3,Ip[-1]*1e-6,np.max(E_star)))
 
     out['Ip'], out['Ir'], out['t'] = Ip, Ir, t
     out['jp'], out['jr'] = jp, jr

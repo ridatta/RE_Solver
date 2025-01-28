@@ -384,6 +384,79 @@ def getTritBetaDecay(nT,E_star):
 
 
 
+def analy_beta_source(E_star):
+    """
+    Returns the beta source rate in per second. Uses an analytical fit to the integral for faster computation.
+    Multiply with tritium density to get the generation rate in per cubic meter per second.
+
+    Parameters:
+        E_star (float): E-field normalized by Connor-Hastie field
+
+    Returns:
+        float: Beta source rate in per second
+    """
+    # Fit parameters
+    A = 2.09023917e-09
+    mu = -3.80424810
+    sig = 6.81315848
+
+    # Critical Runaway energy in keV
+    Wc = getCriticalRunawayEnergy(E_star) / const.eV * 1e-3  # keV
+    
+    if isinstance(Wc, np.ndarray):
+        outval = A * np.exp(-((Wc - mu) ** 2) / (2 * sig ** 2))
+        outval[np.where(Wc > 18.6)] = 0.0
+        outval[np.where(Wc < 0.1)] = 1.8e-9  # Maximum Rate, per s
+    else:
+        if Wc > 18.6:
+            outval = 0.0
+        elif Wc < 0.1:
+            outval = 1.8e-9  # Maximum Rate
+        else:
+            outval = A * np.exp(-((Wc - mu) ** 2) / (2 * sig ** 2))
+
+    return outval
+
+
+
+def analy_compton_source(E_star):
+    """
+    Returns the Compton rate in per second. Uses an analytical fit to the integral for faster computation.
+    Multiply with total electron density to get the rate in per cubic meter per second.
+
+    Parameters:
+        E_star (float): E-field normalized by Connor-Hastie field
+
+    Returns:
+        float: Compton rate in per second
+    """
+    # Critical Runaway energy in keV
+    Wc = getCriticalRunawayEnergy(E_star) / const.eV * 1e-3  # keV
+    x = np.log(Wc)
+    
+    # Fit parameters for SPARC
+    A = 6.00578227e-01
+    L = 1.25488546e+00
+    x0 = 4.44639341e+00
+    c = 2.12986727e-11
+    B = -2.17893889e-11
+    
+    if isinstance(Wc, np.ndarray):
+        outval = B * np.tanh(A * (x - x0) / L) + c
+        outval[np.where(Wc > 10**4.5)] = 0.0
+        outval[np.where(Wc < 0.1)] = 4.3e-11  # Maximum Rate, per s
+    else:
+        if Wc < 0.1:
+            outval = 4.3e-11  # MAX rate for SPARC
+        elif Wc > 10 ** 4.5:
+            outval = 0.0
+        else:
+            outval = B * np.tanh(A * (x - x0) / L) + c
+
+    return outval
+
+
+
 
 def getComptonSource(E_star,ne,device='ITER'):
      # E_star = electric field / Connor-hastie Field
