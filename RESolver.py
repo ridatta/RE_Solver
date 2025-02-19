@@ -1,8 +1,9 @@
 import numpy as np
 from RE import *
 import scipy.constants as const
+from scipy.integrate import cumtrapz
 
-def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0):
+def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0,solveT=False):
     # constants = [rmax, R0, ne, T, Zeff, lnA, eta]
                 # where rmax [m] = minor radius
                 # R0 [m] = major radius
@@ -24,11 +25,12 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     
     rmax, R0, ne, T, Zeff, lnA, eta = constants # Constants for the solver, all units in SI except temperature [eV]
     jp, jr = init_conditions[0].copy(), init_conditions[1].copy() # Initial plasma and RE current [A/m**2]
+    n0 = 1.0 * ne
     
     ## Grid ##
     nx = jp.shape[0]
     dr = rmax / (nx-1) # [m], resolution
-    r = np.linspace(0,rmax,nx) # grid
+    r = np.linspace(1e-3,rmax,nx) # grid
     
     print('nx = %d\n'%nx)
     print('I0 [MA] = %1.3g\n'%(2*np.pi*np.trapz(jp*r,x=r)*1e-6))
@@ -80,7 +82,7 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             if iDreicer:
                 S_primary = S_primary + getDreicerSource(E_star,ne,lnA,Zeff,T) # Dreicer Source, m**-3/s
             if iTritBeta:
-                S_primary = S_primary + 0.5 * ne * analy_beta_source(E_star) # Beta Source, m**-3/s
+                S_primary = S_primary + 0.5 * n0 * analy_beta_source(E_star) # Beta Source, m**-3/s
             if iCompton:
                 S_primary =  S_primary + ne * analy_compton_source(E_star) # Compton Source, m**-3/s
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
@@ -102,11 +104,17 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
         # Update 
         jp[1:-1] = jp[1:-1] + dt/const.mu_0 * (d2Edr2[1:-1] + 1/r[1:-1] * dEdr[1:-1])
         jr[1:-1] = jr[1:-1] +  dt * gamma_av[1:-1]  * jr[1:-1]  + dt * (cre * const.e) * S_primary[1:-1]
+        
 
         # Update BCs
         jp[0] = jp[1] # No gradient
         jr[0] = jr[1] # No gradient
         jp[-1] = jr[-1] # No boundary E
+        
+        
+        # Update Free Electron Density
+        n_RE = np.abs(jr) / (const.e * cre) # per cubic m
+        ne = n0 - n_RE # per cubic m 
 
         # Update time
         numsteps = numsteps+1
@@ -120,6 +128,19 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             Ir.append(2*np.pi*np.trapz(jr*r,x=r)) # A
             t.append(tnow)
             li.append(getInternalInductance(jp,r,R0)[0])
+            # Re calculate T and eta
+            if solveT:
+                # Thermal eqm.
+                kappa = 0.07 * 2.18122e+26 # particles/(m-s)
+                chi =  kappa / n0
+                alpha = eta / (n0 * const.eV * chi)
+                j = jp - jr 
+                F1 = cumtrapz(-alpha*r*j**2,x=r,initial=0)
+                F2 = cumtrapz(F1/r,x=r,initial=0)
+                Tnum = F2 + (T[-1] - F2[-1]) # new Temperature
+                eta = eta * (Tnum/T)**(-3/2) # update eta
+                T = Tnum # Update T
+            
             # Print
             if verbose:
                 print("step = %d, time [ms] = %1.2f, Ip [MA] = %1.2f, E/Ec [-] = %1.2f\n"
@@ -130,5 +151,6 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     out['init_conditions'] = init_conditions
     out['constants'] = constants
     out['li'] = li
+    out['T'] = T
     return out
 
