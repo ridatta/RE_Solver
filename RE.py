@@ -4,6 +4,7 @@ import scipy.constants as const
 from unit_conversion import *
 from scipy.integrate import cumtrapz
 from weights import *
+from scipy.interpolate import interp1d
 
 # Important Functions Related to REs #
 
@@ -157,6 +158,27 @@ def getZbarTF(z, a, rho, tev):
     ne = Zbar * ni
 
     return Zbar, ne
+
+# ADAS Coronal Eqm. Ne Ionization Model
+
+def getNeZ(Tq):
+    data = np.loadtxt('./RE_Solver/data/Ne_Coronal.csv',delimiter=',')
+    T = data[:,0]
+    Z = data[:,1]
+
+    f = interp1d(T, Z, fill_value='extrapolate')
+    
+    Zvals = f(Tq)
+    if isinstance(Tq, np.ndarray):
+        Zvals[np.where(Zvals > 10)] = 10
+        Zvals[np.where(Zvals < 0) ] = 0
+        return Zvals
+    else:
+        return min(Zvals,10)
+        
+
+
+
 
     
 ## Primary Sources ##
@@ -479,9 +501,17 @@ def getComptonSource(E_star,ne,device='ITER'):
         Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
     elif device == 'SPARC':
         data = np.loadtxt('./RE_Solver/data/SPARC_Gamma_Flux.csv')
-        from scipy.interpolate import interp1d
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
         Gamma = f(E_gamma) # [#/m**2/s/MeV]
+    elif device == 'ARC-P':
+        data = np.loadtxt('./RE_Solver/data/ARC_Prompt_Gamma_Flux.csv')
+        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
+        Gamma = f(E_gamma) # [#/m**2/s/MeV]
+    elif device == 'ARC-NP':
+        data = np.loadtxt('./RE_Solver/data/ARC_NonPrompt_Gamma_Flux.csv')
+        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
+        Gamma = f(E_gamma) # [#/m**2/s/MeV]
+    
         
     if isinstance(Wc, np.ndarray):
         S = np.zeros_like(Wc)
@@ -519,8 +549,7 @@ def getHotTailSeed(n0,T0,lnA,E0,t0):
     E0= E0 + 1e-8 # add a small value to prevent zeros
     vth = np.sqrt(T0*const.eV/const.m_e) # Pre-TQ electron thermal velocity
     nu0 = n0 * const.e**4 * lnA / (4 * np.pi * const.epsilon_0**2 * const.m_e**2 * vth**3) # per s, collison freq.
-    ED0 = get
-    (n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
+    ED0 = getDreicerField(n0,lnA,T0) # N/C; Pre-TQ Dreicer Field
     uc = (t0 * nu0 * (2 * np.log(ED0/E0) - 4/3*np.log(4/3*t0*nu0) - 5/3))**(1/3)
     nr = n0 * 2/np.sqrt(np.pi) * uc * np.exp(-uc**2) # per m cubed; runaway electron density
     return nr # per m cubed
