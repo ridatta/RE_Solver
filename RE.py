@@ -6,6 +6,8 @@ from scipy.integrate import cumtrapz
 from weights import *
 from scipy.interpolate import interp1d
 
+data_path = './data/' # Path to data folder
+
 # Important Functions Related to REs #
 
 def getConnorHastieField(ne,lnA):
@@ -162,7 +164,7 @@ def getZbarTF(z, a, rho, tev):
 # ADAS Coronal Eqm. Ne Ionization Model
 
 def getNeZ(Tq):
-    data = np.loadtxt('./RE_Solver/data/Ne_Coronal.csv',delimiter=',')
+    data = np.loadtxt(data_path + 'Ne_Coronal.csv',delimiter=',')
     T = data[:,0]
     Z = data[:,1]
 
@@ -387,7 +389,7 @@ def getTritBetaDecay(nT,E_star):
     Wc = Wc / const.eV * 1e-3 # keV
     
     # Load tritium beta spectrum
-#     data = np.loadtxt('./RE_Solver/data/trit_beta.csv',delimiter=',')
+#     data = np.loadtxt(data_path + 'trit_beta.csv',delimiter=',')
 #     E = data[:,0]
 #     f_beta = data[:,1] / 9.1885835
 
@@ -500,15 +502,15 @@ def getComptonSource(E_star,ne,device='ITER'):
         z = (np.log(E_gamma) + 1.2) 
         Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
     elif device == 'SPARC':
-        data = np.loadtxt('./RE_Solver/data/SPARC_Gamma_Flux.csv')
+        data = np.loadtxt(data_path + 'SPARC_Gamma_Flux.csv')
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
         Gamma = f(E_gamma) # [#/m**2/s/MeV]
     elif device == 'ARC-P':
-        data = np.loadtxt('./RE_Solver/data/ARC_Prompt_Gamma_Flux.csv')
+        data = np.loadtxt(data_path + 'ARC_Prompt_Gamma_Flux.csv')
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
         Gamma = f(E_gamma) # [#/m**2/s/MeV]
     elif device == 'ARC-NP':
-        data = np.loadtxt('./RE_Solver/data/ARC_NonPrompt_Gamma_Flux.csv')
+        data = np.loadtxt(data_path + 'ARC_NonPrompt_Gamma_Flux.csv')
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
         Gamma = f(E_gamma) # [#/m**2/s/MeV]
     
