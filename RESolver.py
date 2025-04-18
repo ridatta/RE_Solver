@@ -60,6 +60,9 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     jseed = cre * const.e * ne * gamma * dt + jr # A/m**2
 
     print('Seed Ir(t=dt) [MA] = %1.3g\n'%(1e-6*2*np.pi*np.trapz(jseed*r,x=r)))
+    
+    print('Initial E/Ed [-] = %1.3g\n'%(np.max(eta*(jp-jr))/getDreicerField(ne,lnA,T)))
+    print('Initial Dreicer rate [m^-3s^-1] = %1.3g\n'%getDreicerSource(np.max(Estar),ne,lnA,Zeff,T))
 
     #### Time Loop ####
 
@@ -143,8 +146,9 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             
             # Print
             if verbose:
-                print("step = %d, time [ms] = %1.2f, Ip [MA] = %1.2f, E/Ec [-] = %1.2f\n"
-                      %(numsteps,tnow*1e3,Ip[-1]*1e-6,np.max(E_star)))
+                Ed = getDreicerField(ne,lnA,T)
+                print("step = %d, time [ms] = %1.2f, Ip [MA] = %1.2f, E/Ec [-] = %1.2f, E/Ed [-] = %1.2f, max Sp [m^-3s^-1] = %1.3g\n"
+                      %(numsteps,tnow*1e3,Ip[-1]*1e-6,np.max(E_star),np.max(E/Ed),np.max(S_primary)))
 
     out['Ip'], out['Ir'], out['t'] = Ip, Ir, t
     out['jp'], out['jr'] = jp, jr
