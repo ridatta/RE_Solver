@@ -2,7 +2,7 @@ import scipy.constants as const
 import numpy as np
 import scipy.constants as const
 from unit_conversion import *
-from scipy.integrate import cumtrapz
+from scipy.integrate import cumulative_trapezoid
 from weights import *
 from scipy.interpolate import interp1d
 
@@ -55,7 +55,7 @@ def getInternalInductance(jp,r,R0):
     # jp = plasma current denisty [A/m**2]
     # r = minor radius [m]
     # R0 = major radius [m]
-    B_p = 1/r[1:] * cumtrapz(const.mu_0 * r * jp, x=r) # Poloidal Magnetic Field [T]
+    B_p = 1/r[1:] * cumulative_trapezoid(const.mu_0 * r * jp, x=r) # Poloidal Magnetic Field [T]
     li = 2 * np.pi * np.trapz(B_p**2 * r[1:], x= r[1:]) / (np.pi * r[-1]**2 * B_p[-1]**2) # Normalized Inductance
     Lint = li * (const.mu_0 * R0 / (2)) # Henry
     return li, Lint
@@ -632,5 +632,78 @@ def get_avalance_growth_rate_RP2(E_star,ne,inv_aspect_ratio,lnA,Z):
     c4 = 3 * a * (Z + 5) * (alpha**2 + 4/a**2 - 1)
 
     return c1 * (c2 + c3/c4)**(-1/2) # per second
+
+
+
+def calcDelta(Eceff,nuD0,nuS1,tauRadInv,phib1,phib2,pc0):
+    return (nuD0/nuS1**2)*(nuD0*tauRadInv/Eceff+phib1+phib2*np.log(pc0))
+
+def calcEceff(delta,nuS0,nuS1,nuD1,nuD0,pc0):
+    return nuS0 + nuS1*( (1+nuD1/nuD0)*np.log(pc0) + np.sqrt(2*delta+1))
+
+def getEc_eff_AR(Z,Z0,nj,T,B,element='Ne'):
+    
+    # Returns the effective critical electric field and Ectot with Ne or Ar impurities in V/m
+    # INPUTS:
+    #       Z   : atomic number of each ion species
+    #       Z0  : net charge of plasma for each ion species
+    #       nj  : density of each ion species [m^(-3)]
+    #       Z, Z0 and nj must be arrays of length nSpecies
+    #       T   : temperature [eV]  (for calculation of the Coulomb logarithm)
+    #       B   : magnetic field [T]
+    #       element: "Ne" or "Ar"
+   
+    # pick the element
+    if element == 'Ne':
+        ln_aBar = np.array([4.7064, 4.6097, 4.5028, 4.3858, 4.2638, 4.1266, 3.9568, 3.6810, 3.1777, 3.1278])
+        ln_I    = np.array([-8.2227, -8.0370, -7.8614, -7.6837, -7.4994, -7.2788, -6.9808, -6.5976, -5.8933, -5.8320])
+    elif element == 'Ar':
+        ln_aBar = np.array([4.5677, 4.5007, 4.4289, 4.3513, 4.2698, 4.1815, 4.0829, 3.9748,
+                            3.8511, 3.7882, 3.7203, 3.6436, 3.5579, 3.4525, 3.3093, 3.0503, 2.5578, 2.5332])
+        ln_I    = np.array([-7.9050, -7.7532, -7.6076, -7.4626, -7.3178, -7.1665, -7.0055, -6.8020,
+                            -6.5538, -6.4647, -6.3644, -6.2465, -6.1070, -5.9219, -5.6535, -5.3213, -4.6937, -4.6598])
+    else:
+        raise ValueError("element must be 'Ne' or 'Ar'")
+    
+    ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
+    ntot = np.sum(Z * nj) # Bound + Free electron density, per cubic m 
+    Zeff = np.sum((Z0**2 * nj))/ne_free # Effective Ionization
+    Zfulleff = np.sum(Z**2 * nj)/ne_free 
+    lnLStar = 14.6 + 0.5 * np.log(T / (ne_free/1e20)) # Coul. Log
+    Ne = Z - Z0 # No. of bound electrons
+
+    ## calculate the constants nuD0, nuD1, nuS0, nuS1
+    nuD0 = (1 + Zeff) - 2/3 * np.sum(Ne**2 * nj)/ne_free /lnLStar
+    nuD1 = Zfulleff/lnLStar
+    nuS0 = 1
+    nuS1 = (1 + 3 * np.sum(Ne * nj)/ne_free)/(2*lnLStar)
+    for i in range(1,Z.shape[0]):
+        nuD0 = nuD0 + (Z[i]**2 - Z0[i]**2) * ln_aBar[Z0[i]] * (nj[i]/ne_free) / lnLStar
+        nuS0 = nuS0 + Ne[i] * (-ln_I[Z0[i]]-1) * (nj[i]/ne_free) / lnLStar
+
+    #### Radiation Terms ####
+
+    # synchrotron radiation term
+    tauRadInv =  B**2/(ne_free/1e20)/(15.44*lnLStar);
+
+    # bremsstrahlung term
+    ALPHA = 1/137.036;
+    bremsprefactor = ALPHA * Zfulleff/lnLStar;
+    phib1 = bremsprefactor*0.35;
+    phib2 = bremsprefactor*0.20;
+
+    pc0 = nuD0/(2*nuS1);
+
+    Ectot = ntot/ne_free # in units of E_c
+    Eceff0 = Ectot
+    delta0 = calcDelta(Eceff0,nuD0,nuS1,tauRadInv,phib1,phib2,pc0)
+    delta1 = calcDelta(calcEceff(delta0,
+                                nuS0,nuS1,nuD1,nuD0,pc0),
+                       nuD0,nuS1,tauRadInv,phib1,phib2,pc0)
+
+    EceffOverEctot = calcEceff(delta1,nuS0,nuS1,nuD1,nuD0,pc0)/Ectot
+    Ectot =  ntot *  const.e**3  * lnLStar /(4 * np.pi * const.epsilon_0**2 * const.m_e * const.c**2);
+    
+    return Ectot * EceffOverEctot, Ectot
 
 
