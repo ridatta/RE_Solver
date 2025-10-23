@@ -641,7 +641,7 @@ def calcDelta(Eceff,nuD0,nuS1,tauRadInv,phib1,phib2,pc0):
 def calcEceff(delta,nuS0,nuS1,nuD1,nuD0,pc0):
     return nuS0 + nuS1*( (1+nuD1/nuD0)*np.log(pc0) + np.sqrt(2*delta+1))
 
-def getEc_eff_AR(Z,Z0,nj,T,B,element='Ne'):
+def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
     
     # Returns the effective critical electric field and Ectot with Ne or Ar impurities in V/m
     # INPUTS:
@@ -707,3 +707,67 @@ def getEc_eff_AR(Z,Z0,nj,T,B,element='Ne'):
     return Ectot * EceffOverEctot, Ectot
 
 
+def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
+    
+    # p = normalized momentum
+    # Z = max. ionization
+    # Z0 = ionization level
+    # nj = density [per cubic m]
+    # T = temperature [eV]
+    # element = 'Ne' or 'Ar'
+    
+    # Constants
+    if element == 'Ne':
+        ln_aBar = np.array([4.7064, 4.6097, 4.5028, 4.3858, 4.2638, 4.1266, 3.9568, 3.6810, 3.1777, 3.1278])
+        ln_I    = np.array([-8.2227, -8.0370, -7.8614, -7.6837, -7.4994, -7.2788, -6.9808, -6.5976, -5.8933, -5.8320])
+    elif element == 'Ar':
+        ln_aBar = np.array([4.5677, 4.5007, 4.4289, 4.3513, 4.2698, 4.1815, 4.0829, 3.9748,
+                            3.8511, 3.7882, 3.7203, 3.6436, 3.5579, 3.4525, 3.3093, 3.0503, 2.5578, 2.5332])
+        ln_I    = np.array([-7.9050, -7.7532, -7.6076, -7.4626, -7.3178, -7.1665, -7.0055, -6.8020,
+                            -6.5538, -6.4647, -6.3644, -6.2465, -6.1070, -5.9219, -5.6535, -5.3213, -4.6937, -4.6598])
+    else:
+        raise ValueError("element must be 'Ne' or 'Ar'")
+    
+    
+    aBar_Ne = np.exp(ln_aBar)
+    I_Ne = np.exp(ln_I)
+    k = 5
+    
+    # Other Quantities
+    ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
+    Zeff = np.sum((Z0**2 * nj))/ne_free # Effective Ionization
+    Ne = Z - Z0 # No. of bound electrons
+
+    # Everything is a function of momentum p
+    gamma = np.sqrt(1+p**2)
+    beta = p**2 / (1 + p**2)
+    
+    # Coulomb Logs (also functions of p)
+    PT = np.sqrt(2 * T / const.m_e / const.c**2) # Thermal velocity
+    lnAc = 14.6 + 0.5 * np.log(T / (ne_free/1e20)) # RE-Thermal Coul. log
+    lnA0 = 14.9 - 0.5 * np.log(ne_free/1e20) + np.log(T/1e3) # Thermal-Thermal Coul. Log
+    lnAee = lnA0 + 1/5 * np.log(1 + (2*(gamma-1)/PT**2)**2.5)
+    lnAei = lnA0 + 1/5 * np.log(1 + (2*p/PT)**5)
+    # lnAee = lnAc + np.log(np.sqrt(gamma-1))
+    # lnAei = lnAc + np.log(np.sqrt(2) * p)
+    
+    # Caluclate nuS and nuD (Bandaru + 2024)
+
+    nuS = lnAee
+    nuD = lnAee + Zeff * lnAei
+    for j in range(1,Z.shape[0]):
+        hj = p * np.sqrt(gamma-1) / I_Ne[Z0[j]]
+        F1j = 1/k * np.log(1+hj**k) - beta**2
+        pabar1p5 = (p*aBar_Ne[Z0[j]])**1.5
+        nuS = nuS + (nj[j] / ne_free)  * Ne[j] * F1j
+        nuD = nuD + (nj[j] / ne_free) * ( 
+                      (2/3 * (Z[j]**2 - Z0[j]**2)) * np.log(pabar1p5+1)
+                    - (2/3 * Ne[j]**2 * pabar1p5 / (pabar1p5+1))
+                    )
+        
+    nuS = nuS / lnAc
+    nuD = nuD / lnAc
+    
+    return nuD, nuS
+
+    
