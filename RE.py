@@ -634,7 +634,7 @@ def get_avalance_growth_rate_RP2(E_star,ne,inv_aspect_ratio,lnA,Z):
 
     return c1 * (c2 + c3/c4)**(-1/2) # per second
 
-
+# THIS IS THE HESSLOW AVALANCHING MODEL #
 
 def calcDelta(Eceff,nuD0,nuS1,tauRadInv,phib1,phib2,pc0):
     return (nuD0/nuS1**2)*(nuD0*tauRadInv/Eceff+phib1+phib2*np.log(pc0))
@@ -709,7 +709,7 @@ def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
 
 
 def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
-    
+    # Outputs the deflection, slowing down freq (Hesslow 2018)
     # p = normalized momentum
     # Z = max. ionization
     # Z0 = ionization level
@@ -774,6 +774,7 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
 
     
 # Get fn
+# This describes the function to solve critical momentum
 def fn(pstar,E_star,Z,Z0,nj,T):
     # T [eV]
     # Pstar = normalized momentum
@@ -806,3 +807,4 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
     
     return gamma
 
+# END OF HESSLOW AVALANCHING #
