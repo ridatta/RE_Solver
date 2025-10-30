@@ -5,6 +5,7 @@ from unit_conversion import *
 from scipy.integrate import cumulative_trapezoid
 from weights import *
 from scipy.interpolate import interp1d
+from scipy.optimize import fsolve
 
 data_path = './data/' # Path to data folder
 
@@ -84,7 +85,7 @@ def getTransSpitzerResistivity(lnA,T,Z):
     return 1.03e-2 * Z * lnA * T**(-3/2) # [Ohm-cm]
 
 def getCoulombLog(ne,T):
-    # Units in SI
+    # Units in SI (could implement another one)
     return 14.78e0-0.5*np.log(ne/1.0e20)+np.log(T/1.0e3)
     
 
@@ -750,6 +751,7 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
     lnAei = lnA0 + 1/5 * np.log(1 + (2*p/PT)**5)
     # lnAee = lnAc + np.log(np.sqrt(gamma-1))
     # lnAei = lnAc + np.log(np.sqrt(2) * p)
+    # lnA = 14.6 + 0.5 * np.log(T / (1e20/1e20))
     
     # Caluclate nuS and nuD (Bandaru + 2024)
 
@@ -771,3 +773,36 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
     return nuD, nuS
 
     
+# Get fn
+def fn(pstar,E_star,Z,Z0,nj,T):
+    # T [eV]
+    # Pstar = normalized momentum
+    # Estar = Epar / E_CH (E_CH = Connor Hastie Critical Field)
+    nuD, nuS = get_nuD_nuS(pstar,Z,Z0,nj,T)
+    return pstar * (E_star)**(0.5) - (nuS * nuD)**(1/4)
+
+
+# Hesslow Avalanching Rate
+def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0): 
+    # Returns the avalanching rate in per second
+    # E_star [-] = Parallel E-field / E_CH (E_CH = Connor Hastie Electric field)
+    # Z = max. ionization; first element of array is deuterium, next is Neon
+    # Z0 = ionization level; first element of array is 1, next is Neon ionization
+    # nj = density of each species [per cubic m]
+    # T = temperature [eV]
+    # element = either 'Ar' or 'Ne'
+
+    ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
+    ntot = np.sum(Z * nj) # Bound + Free electron density, per cubic m 
+    lnAc = 14.6 + 0.5 * np.log(T / (ne_free/1e20)) # RE-Thermal Coul. log
+    Eceff = getEc_eff(Z,Z0,nj,T,B,element)[0] # Effective E-field, V/m
+    pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
+    nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
+    
+    ECH = getConnorHastieField(ne_free, lnAc) # Connor Hastie Field [V/m]
+    Epar = ECH * E_star # Parallel Electric Field V/m
+    
+    gamma = const.e / (const.m_e * const.c *lnAc) * (ntot / ne_free) * (Epar - Eceff) / np.sqrt(4 + nuS * nuD) # per second
+    
+    return gamma
+
