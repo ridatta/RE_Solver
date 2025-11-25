@@ -678,6 +678,7 @@ def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
     nuD1 = Zfulleff/lnLStar
     nuS0 = 1
     nuS1 = (1 + 3 * np.sum(Ne * nj)/ne_free)/(2*lnLStar)
+    
     for i in range(1,Z.shape[0]):
         nuD0 = nuD0 + (Z[i]**2 - Z0[i]**2) * ln_aBar[Z0[i]] * (nj[i]/ne_free) / lnLStar
         nuS0 = nuS0 + Ne[i] * (-ln_I[Z0[i]]-1) * (nj[i]/ne_free) / lnLStar
@@ -796,12 +797,21 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
     ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
     ntot = np.sum(Z * nj) # Bound + Free electron density, per cubic m 
     lnAc = 14.6 + 0.5 * np.log(T / (ne_free/1e20)) # RE-Thermal Coul. log
-    Eceff = getEc_eff(Z,Z0,nj,T,B,element)[0] # Effective E-field, V/m
-    pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
-    nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
-    
-    ECH = getConnorHastieField(ne_free, lnAc) # Connor Hastie Field [V/m]
-    Epar = ECH * E_star # Parallel Electric Field V/m
+    Ec = getConnorHastieField(ne_free, lnAc)  # [V/m]
+    Epar = Ec * E_star # Parallel Electric Field V/m
+# test to handle fully ionized case
+    if ne_free == ntot:
+        Zeff = np.sum((Z0**2 * nj)) / ne_free
+        Eceff = Ec
+        nuD = 1 + Zeff
+        nuS = 1
+        
+    else: 
+        Eceff = getEc_eff(Z,Z0,nj,T,B,element)[0] # Effective E-field, V/m
+        pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
+        nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
+
+        
     
     gamma = const.e / (const.m_e * const.c *lnAc) * (ntot / ne_free) * (Epar - Eceff) / np.sqrt(4 + nuS * nuD) # per second
     
