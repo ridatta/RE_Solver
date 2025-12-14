@@ -86,7 +86,8 @@ def getTransSpitzerResistivity(lnA,T,Z):
 
 def getCoulombLog(ne,T):
     # Units in SI (could implement another one)
-    return 14.78e0-0.5*np.log(ne/1.0e20)+np.log(T/1.0e3)
+#     return 14.78e0-0.5*np.log(ne/1.0e20)+np.log(T/1.0e3)
+    return 14.6 + 0.5 * np.log(T / (ne/1e20)) # RE-Thermal Coul. log
     
 
 def getZbarTF(z, a, rho, tev):
@@ -631,8 +632,11 @@ def get_avalance_growth_rate_RP2(E_star,ne,inv_aspect_ratio,lnA,Z):
     c2 = 1 - alpha**(-1) 
     c3 = 4 * np.pi * (Z+1)**2
     c4 = 3 * a * (Z + 5) * (alpha**2 + 4/a**2 - 1)
+    
+    
+    return const.e / (const.m_e * const.c *lnA) * Ec * (alpha - 1) / np.sqrt(5 + Z) # per second
 
-    return c1 * (c2 + c3/c4)**(-1/2) # per second
+#     return c1 * (c2 + c3/c4)**(-1/2) # per second
 
 # THIS IS THE HESSLOW AVALANCHING MODEL #
 
@@ -799,22 +803,25 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
     lnAc = 14.6 + 0.5 * np.log(T / (ne_free/1e20)) # RE-Thermal Coul. log
     Ec = getConnorHastieField(ne_free, lnAc)  # [V/m]
     Epar = Ec * E_star # Parallel Electric Field V/m
-# test to handle fully ionized case
-    if ne_free == ntot:
+    if ne_free == ntot: # test to handle fully ionized case
         Zeff = np.sum((Z0**2 * nj)) / ne_free
-        Eceff = Ec
+        Eceff = 1.0 * Ec
         nuD = 1 + Zeff
         nuS = 1
-        
     else: 
         Eceff = getEc_eff(Z,Z0,nj,T,B,element)[0] # Effective E-field, V/m
-        pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
-        nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
-
-        
-    
-    gamma = const.e / (const.m_e * const.c *lnAc) * (ntot / ne_free) * (Epar - Eceff) / np.sqrt(4 + nuS * nuD) # per second
+        if (Epar > Eceff):
+            pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
+            nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
+            
+    if (Epar > Eceff):
+        gamma = (const.e / (const.m_e * const.c *lnAc) 
+                     * (ntot / ne_free) * (Epar - Eceff) / np.sqrt(4 + nuS * nuD)) # per second
+    else:
+        gamma = 0.0
     
     return gamma
 
 # END OF HESSLOW AVALANCHING #
+
+
