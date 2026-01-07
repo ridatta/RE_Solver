@@ -6,6 +6,7 @@ from scipy.integrate import cumulative_trapezoid
 from weights import *
 from scipy.interpolate import interp1d
 from scipy.optimize import fsolve
+from scipy.integrate import solve_ivp
 
 data_path = './data/' # Path to data folder
 
@@ -780,11 +781,11 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
     
 # Get fn
 # This describes the function to solve critical momentum
-def fn(pstar,E_star,Z,Z0,nj,T):
+def fn(pstar,E_star,Z,Z0,nj,T,element='Ne'):
     # T [eV]
     # Pstar = normalized momentum
     # Estar = Epar / E_CH (E_CH = Connor Hastie Critical Field)
-    nuD, nuS = get_nuD_nuS(pstar,Z,Z0,nj,T)
+    nuD, nuS = get_nuD_nuS(pstar,Z,Z0,nj,T,element)
     return pstar * (E_star)**(0.5) - (nuS * nuD)**(1/4)
 
 
@@ -811,7 +812,7 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
     else: 
         Eceff = getEc_eff(Z,Z0,nj,T,B,element)[0] # Effective E-field, V/m
         if (Epar > Eceff):
-            pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T))[0] # critical momentum [-]
+            pstar = fsolve(fn, 1, args=(E_star,Z,Z0,nj,T,element))[0] # critical momentum [-]
             nuD, nuS =  get_nuD_nuS(pstar,Z,Z0,nj,T,element) # Slowing down and deflection freq [-]
             
     if (Epar > Eceff):
@@ -823,5 +824,212 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
     return gamma
 
 # END OF HESSLOW AVALANCHING #
+
+
+# Zero-D Solver Class
+
+class solver0D:
+    def __init__(self):
+        # Constants
+        self.R0 = 1.85 # Major Radius, [m]
+        self.a = 0.57 # Minor Radius, [m]
+        self.ni = 3e20 # ion density in plasma fuel, per m**3
+        self.L = 1.85e-6 # inductance [H]
+        self.k = 1 # elongation
+        self.Btor = 12.2 # Toroidal Field [Tesla]
+        
+        # IC
+        self.I0 = 8.7e6 # Initial plasma current [ampere]
+        self.Ir0 = 0 # Initial RE current [ampere]
+        
+        # Temp. evolution
+        self.T0 = 5e3 # eV, initial temperature
+        self.Tf = 10 # eV, final temperature
+        self.t0 = 0.1e-3 # TQ time [s]
+        
+        # Impurities
+        self.nD = 1e-11 # added deuterium
+        self.n_imp = 1e-11 # impurity density
+        self.Z_imp = 10 # impuurity atomic no.
+        self.A_imp = 20 # impurity weight
+        
+        # Settings
+        
+        self.iDreicer = 1
+        self.iTritium = 0
+        self.iCompton = 0 
+        self.iAvalanche = 3
+        
+        self.tmax = 5e-3 # s, max. solution time
+        
+    def display(self):
+        
+        print('Major radius R0 [m] = %1.3f'%(self.R0))
+        print('Minor radius a [m] = %1.3f'%(self.a))
+        print('Elongation k [-] = %1.3f'%(self.k))
+        print('ni [per cubic m] = %1.3g'%(self.ni))
+        print('Inductance L [Henry] = %1.3g'%(self.L))
+        print('Btor [Tesla] = %1.3g'%(self.Btor))
+        
+        print("\n Initial Values and TQ:")
+        
+        print('Init. Plasma Current I0 [A] = %1.3g'%(self.I0))
+        print('Init. RE Current Ir0 [A] = %1.3g'%(self.Ir0))
+        print('Init. Temp. T0 [eV] = %1.3g'%(self.T0))
+        print('Final Temp. Tf [eV] = %1.3g'%(self.Tf))
+        print('Temp. decay time t0 [s] = %1.3g'%(self.t0))
+        
+        print("\n Impurity Settings:")
+        
+        print('Added D density [per cubic m] = %1.3g'%(self.nD))
+        print('Added Impurity density [per cubic m] = %1.3g'%(self.n_imp))
+        print('Added Impurity Z, A [-] = %1.0f, %1.0f'%(self.Z_imp,self.A_imp))
+        
+        print("\n RE Source Settings: \n")
+        print('Primary: iDreicer = %d, iTritium = %d, iCompton = %d'%(self.iDreicer,self.iTritium,self.iCompton))
+        print('Secondary: iAvalanche = %d'%(self.iAvalanche))
+        
+        
+        
+        
+    def getTemp(self,t):
+        return (self.T0 - self.Tf)* np.exp(-t/self.t0) + self.Tf # eV, Time-varying temperature
+    
+    def getImpurityIonization(self,T):
+        return getZbarTF(self.Z_imp, self.A_imp,
+                    SI2cgs(self.A_imp*self.n_imp*const.m_p,'Mass Density'),
+                    T)[0] # caluclate ionization level using LTE Thomas-Fermi model
+        #return getNeZ(T) # Using ADAS Coronal Eqm. Model
+        
+    def getElecDensity(self,Z):
+        
+        nfree = 1 * self.ni + 1 * self.nD + Z * self.n_imp
+        ntot = self.ni + self.nD + self.Z_imp * self.n_imp
+        return nfree, ntot
+    
+    def getPrimaryRates(self, E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed):
+
+        if self.iDreicer == 1:
+            SD = getDreicerSource(E_star,ne,lnA,Zeff,T) # per m3 per s, Classical Dreicer
+        elif self.iDreicer == 2:
+            SD = getDreicerRateHesslow(self.ni,self.n_imp,self.Z_imp,Z,Epar/Ed,T)
+        else:
+            SD = 0
+        
+        if (self.iTritium == 1):
+            ST = getTritBetaDecay(0.5*self.ni,E_star)  # per m3 per s
+        else:
+            ST = 0;
+
+        if (self.iCompton == 1):
+            if T >= 2.6e3:
+                SC = getComptonSource(E_star,ntot,'ARC-P') # Use Prompt Flux
+            else:
+                SC =  getComptonSource(E_star,ntot,'ARC-NP') # Use Non Prompt Flux
+        else:
+            SC = 0;
+
+
+        # Total Primary Contribution
+        S =  SD + ST + SC # per m3 per s
+        return S
+    
+    def getAvalancheRates(self,E_star,ntot,ne,T,lnA,Zeff,Zion):
+        # iAvalanche = 1 Rosenbluth-Putvinski * ntot/ne, 2 Simple RP, 3 = Hesslow, 0 = off
+        # Avalanche
+        if (self.iAvalanche == 0):
+            Yav = 0;
+        elif (self.iAvalanche == 1):
+             Yav = (ntot/ne) * get_avalance_growth_rate_RP2(E_star,ne,0/self.R0,lnA,Zeff) # per second
+        elif (self.iAvalanche == 2):
+            Yav = 1 * get_avalance_growth_rate_RP2(E_star,ne,0/self.R0,lnA,Zeff) # per second
+        elif (self.iAvalanche == 3): # Implement getHesslowAvalanchingRate 
+         # Define arrays for species info, first element deuterium, second Neon (impurity)
+            Z = np.array([1, self.Z_imp])             # Max ionization of D and Ne
+            nj = np.array([self.ni, self.n_imp])          # Densities [m^-3]
+            # interpolation 
+            Zlow = int(np.floor(Zion))
+            Zhigh = int(np.ceil(Zion))
+            weight = Zion - Zlow # interpolation weight
+
+            # Creating 2 separate arrays fo the low and high value
+            Z0_low = np.array([1, Zlow])
+            Z0_high = np.array([1, Zhigh])
+
+            if (self.Z_imp==18):
+                element = 'Ar'
+            elif (self.Z_imp==10):
+                element = 'Ne'
+            else:
+                raise Exception("Impurity not available")
+
+            Y_low = getHesslowAvalanchingRate(E_star, Z, Z0_low, nj, T, element=element, B=self.Btor)
+            Y_high = getHesslowAvalanchingRate(E_star, Z, Z0_high, nj, T, element=element, B=self.Btor)
+            Yav = (1 - weight) * Y_low + weight * Y_high # set has the weighted average of the two
+        return Yav
+        
+        
+
+        
+    def dYdt(self,t,Y):
+        # Y[0] = Plasma Current [A]
+        # Y[1] = RE current [A]
+        # Y[2] = RE Kinetic Energy [J]
+        # primary_sources = [iDreicer, iTritium, iCompton], 0 = off
+        # iDreicer = 1 Classical; 2 = Hesslow NN
+        # iAvalanche = 1 Rosenbluth-Putvinski * ntot/ne, 2 Simple RP, 3 = Hesslow, 0 = off
+
+        Ip, Ir, Wkin = Y
+
+
+        # Prescribed Thermal Quench
+        T = self.getTemp(t)
+        Z = self.getImpurityIonization(T)
+        ne, ntot = self.getElecDensity(Z)
+        Zeff = (self.ni + self.nD + self.n_imp * Z**2) / ne
+
+        lnA = getCoulombLog(ne,T) # Coulomb logarithm
+        eta = 0.51 * getTransSpitzerResistivity(lnA,T,Zeff) * 0.01 # Ohm-m
+        Epar = eta*(Ip - Ir) / (np.pi * self.a**2 * self.k) # Parallel E-field [N/C]
+        Ec = getConnorHastieField(ne,lnA) # Connor-Hastie Critical Field, [N/C]
+        Ed = getDreicerField(ne,lnA,T) # [N/C] Dreicer Field
+        E_star = Epar / Ec # Normalized field [-]
+
+
+        # Primary Sources
+
+        Sp = self.getPrimaryRates(E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed)
+        j_primary = Sp * const.c * const.e # A/m**2/s
+        
+        # Avalanche Rate
+        Yav = self.getAvalancheRates(E_star,ntot,ne,T,lnA,Zeff,Z)
+
+        # Derivatives
+        dIpdt = -2 * np.pi * self.R0 * Epar / self.L # [A/s]
+        dIrdt = j_primary * np.pi * self.a**2 + Yav * Ir # [A/s]
+        if (E_star > 1):
+            dWkindt = 2 * np.pi * self.R0 * Ir * Epar
+        else:
+            dWkindt = 0
+
+        return [dIpdt, dIrdt, dWkindt]
+    
+
+    def solve(self):
+        from scipy.integrate import solve_ivp
+        t = np.linspace(0,self.tmax,int(1e4)) # times to solve at [s]
+        sol = solve_ivp(self.dYdt, t_span=(0,max(t)),
+                y0 = [self.I0,self.Ir0,0],
+                t_eval=t,
+                rtol=1e-8, atol=1e-10) # Solve
+        Ip = sol.y[0]
+        Ir = sol.y[1]
+        Wk = sol.y[2]
+        return t, Ip, Ir, Wk
+        
+
+        
+        
+        
 
 
