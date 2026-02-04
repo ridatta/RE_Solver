@@ -660,6 +660,8 @@ def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
     #       element: "Ne" or "Ar"
    
     # pick the element
+
+    r_e = 5.11e5 # electron rest energy
     if element == 'Ne':
         ln_aBar = np.array([4.7064, 4.6097, 4.5028, 4.3858, 4.2638, 4.1266, 3.9568, 3.6810, 3.1777, 3.1278])
         ln_I    = np.array([-8.2227, -8.0370, -7.8614, -7.6837, -7.4994, -7.2788, -6.9808, -6.5976, -5.8933, -5.8320])
@@ -668,8 +670,41 @@ def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
                             3.8511, 3.7882, 3.7203, 3.6436, 3.5579, 3.4525, 3.3093, 3.0503, 2.5578, 2.5332])
         ln_I    = np.array([-7.9050, -7.7532, -7.6076, -7.4626, -7.3178, -7.1665, -7.0055, -6.8020,
                             -6.5538, -6.4647, -6.3644, -6.2465, -6.1070, -5.9219, -5.6535, -5.3213, -4.6937, -4.6598])
+    elif element == "Be":
+        ln_aBar = np.log(np.array([159, 114, 67, 59]))
+        ln_I = np.log((np.array([42.2, 76.9, 205.0, 240.2])/r_e)**-1)
+    elif element == "C":
+        ln_aBar = np.log(np.array([144, 118, 95, 70, 42, 39]))
+        ln_I = np.log((np.array([65.9, 92.6, 134.8, 214.2, 486.2, 539.5])/r_e)**-1)
+    elif element == "W":
+        ln_aBar = np.array([4.07753744, 4.06273922, 4.04771872, 4.03246916, 4.01698344, 4.00125414, 3.98527347, 3.96903326, 3.95252495, 3.93573953, 3.91866755, 3.90129904,
+                            3.88362353, 3.86562997, 3.84730669, 3.8286414, 3.80962107, 3.79023195, 3.77045944, 3.75028808, 3.72970145, 3.70868208, 3.6872114, 3.66526959,
+                            3.64283552, 3.61988658, 3.5963986, 3.57234564, 3.54769984, 3.52243125, 3.49650756, 3.47196645, 3.44680789, 3.42100001, 3.39450839, 3.36729583,
+                            3.33932198, 3.31054301, 3.28091122, 3.25037449, 3.21887582, 3.19047635, 3.16124671, 3.13113691, 3.10009229, 3.06805294, 3.03495299, 3.00071982,
+                            2.96527307, 2.92852352, 2.89037176, 2.86220088, 2.83321334, 2.80336038, 2.77258872, 2.74084002, 2.7080502, 2.67414865, 2.63905733, 2.60268969,
+                            2.56494936, 2.53240712, 2.49986488, 2.46732264, 2.4347804, 2.40223816, 2.36969592, 2.33715368, 2.30461144, 2.2720692, 2.23952696, 2.20698472,
+                            2.17444248, 2.14190024])
+        ln_I = np.log((np.array([751, 775, 801, 827, 855, 885, 917, 950, 985, 1020, 1060, 1110, 1150, 1200, 1250, 1310, 1370, 1430, 1500, 1580, 1660, 1720, 1780, 1840, 1900,
+                                 1970, 2050, 2130, 2210, 2300, 2400, 2500, 2610, 2730, 2850, 2990, 3140, 3300, 3470, 3660, 3870, 4100, 4350, 4630, 4940, 5290, 5680, 5960, 6270,
+                                 6610, 6980, 7380, 7830, 8310, 8860, 9460, 1.01e4, 1.09e4, 1.17e4, 1.27e4, 1.38e4, 1.51e4, 1.66e4, 1.83e4, 2.04e4, 2.08e4, 2.14e4, 2.22e4,
+                                 2.33e4, 2.50e4, 2.84e4, 3.64e4, 8.79e4, 8.91e4])/r_e)**-1)
     else:
-        raise ValueError("element must be 'Ne' or 'Ar'")
+        #raise ValueError("element must be 'Ne', 'Ar', 'Be','C', or 'W'")
+
+        # Generic ion: Bohr approximation
+        # aBar ~ a0 / Z0 , I ~ 13.6 eV * Z0^2
+
+        a0 = 5.29177210903e-11  # Bohr radius [m]
+        I0 = 13.6               # eV
+
+        if np.any(Z0 <= 0):
+            raise ValueError("Z0 must be >= 1 for Bohr approximation")
+
+        ln_aBar = np.log(a0 / Z0)
+        ln_I = np.log((I0 * Z0**2) / r_e)
+
+    tabulated = np.ndim(ln_aBar) > 0
+
     
     ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
     ntot = np.sum(Z * nj) # Bound + Free electron density, per cubic m 
@@ -684,9 +719,17 @@ def getEc_eff(Z,Z0,nj,T,B,element='Ne'):
     nuS0 = 1
     nuS1 = (1 + 3 * np.sum(Ne * nj)/ne_free)/(2*lnLStar)
     
-    for i in range(1,Z.shape[0]):
-        nuD0 = nuD0 + (Z[i]**2 - Z0[i]**2) * ln_aBar[Z0[i]] * (nj[i]/ne_free) / lnLStar
-        nuS0 = nuS0 + Ne[i] * (-ln_I[Z0[i]]-1) * (nj[i]/ne_free) / lnLStar
+    #for i in range(1,Z.shape[0]):
+     #   nuD0 = nuD0 + (Z[i]**2 - Z0[i]**2) * ln_aBar[Z0[i]] * (nj[i]/ne_free) / lnLStar
+      #  nuS0 = nuS0 + Ne[i] * (-ln_I[Z0[i]]-1) * (nj[i]/ne_free) / lnLStar
+    
+    for i in range(1, Z.shape[0]):
+        ln_a = ln_aBar[Z0[i]] if tabulated else ln_aBar
+        lnI  = ln_I[Z0[i]]    if tabulated else ln_I
+
+        nuD0 += (Z[i]**2 - Z0[i]**2) * ln_a * (nj[i]/ne_free) / lnLStar
+        nuS0 += Ne[i] * (-lnI - 1) * (nj[i]/ne_free) / lnLStar
+
 
     #### Radiation Terms ####
 
@@ -724,6 +767,7 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
     # element = 'Ne' or 'Ar'
     
     # Constants
+    r_e = 5.11e5  # electron rest energy
     if element == 'Ne':
         ln_aBar = np.array([4.7064, 4.6097, 4.5028, 4.3858, 4.2638, 4.1266, 3.9568, 3.6810, 3.1777, 3.1278])
         ln_I    = np.array([-8.2227, -8.0370, -7.8614, -7.6837, -7.4994, -7.2788, -6.9808, -6.5976, -5.8933, -5.8320])
@@ -732,14 +776,49 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
                             3.8511, 3.7882, 3.7203, 3.6436, 3.5579, 3.4525, 3.3093, 3.0503, 2.5578, 2.5332])
         ln_I    = np.array([-7.9050, -7.7532, -7.6076, -7.4626, -7.3178, -7.1665, -7.0055, -6.8020,
                             -6.5538, -6.4647, -6.3644, -6.2465, -6.1070, -5.9219, -5.6535, -5.3213, -4.6937, -4.6598])
+    elif element == "Be":
+        ln_aBar = np.log(np.array([159, 114, 67, 59]))
+        ln_I = np.log((np.array([42.2, 76.9, 205.0, 240.2])/r_e)**-1)
+    elif element == "C":
+        ln_aBar = np.log(np.array([144, 118, 95, 70, 42, 39]))
+        ln_I = np.log((np.array([65.9, 92.6, 134.8, 214.2, 486.2, 539.5])/r_e)**-1)
+    elif element == "W":
+        ln_aBar = np.array([4.07753744, 4.06273922, 4.04771872, 4.03246916, 4.01698344, 4.00125414, 3.98527347, 3.96903326, 3.95252495, 3.93573953, 3.91866755, 3.90129904,
+                            3.88362353, 3.86562997, 3.84730669, 3.8286414, 3.80962107, 3.79023195, 3.77045944, 3.75028808, 3.72970145, 3.70868208, 3.6872114, 3.66526959,
+                            3.64283552, 3.61988658, 3.5963986, 3.57234564, 3.54769984, 3.52243125, 3.49650756, 3.47196645, 3.44680789, 3.42100001, 3.39450839, 3.36729583,
+                            3.33932198, 3.31054301, 3.28091122, 3.25037449, 3.21887582, 3.19047635, 3.16124671, 3.13113691, 3.10009229, 3.06805294, 3.03495299, 3.00071982,
+                            2.96527307, 2.92852352, 2.89037176, 2.86220088, 2.83321334, 2.80336038, 2.77258872, 2.74084002, 2.7080502, 2.67414865, 2.63905733, 2.60268969,
+                            2.56494936, 2.53240712, 2.49986488, 2.46732264, 2.4347804, 2.40223816, 2.36969592, 2.33715368, 2.30461144, 2.2720692, 2.23952696, 2.20698472,
+                            2.17444248, 2.14190024])
+        ln_I = np.log((np.array([751, 775, 801, 827, 855, 885, 917, 950, 985, 1020, 1060, 1110, 1150, 1200, 1250, 1310, 1370, 1430, 1500, 1580, 1660, 1720, 1780, 1840, 1900,
+                                 1970, 2050, 2130, 2210, 2300, 2400, 2500, 2610, 2730, 2850, 2990, 3140, 3300, 3470, 3660, 3870, 4100, 4350, 4630, 4940, 5290, 5680, 5960, 6270,
+                                 6610, 6980, 7380, 7830, 8310, 8860, 9460, 1.01e4, 1.09e4, 1.17e4, 1.27e4, 1.38e4, 1.51e4, 1.66e4, 1.83e4, 2.04e4, 2.08e4, 2.14e4, 2.22e4,
+                                 2.33e4, 2.50e4, 2.84e4, 3.64e4, 8.79e4, 8.91e4])/r_e)**-1)
     else:
-        raise ValueError("element must be 'Ne' or 'Ar'")
+        #raise ValueError("element must be 'Ne', 'Ar', 'Be','C', or 'W'")
+
+        # Generic ion: Bohr approximation
+        # aBar ~ a0 / Z0 , I ~ 13.6 eV * Z0^2
+
+        a0 = 5.29177210903e-11  # Bohr radius [m]
+        I0 = 13.6               # eV
+
+        if np.any(Z0 <= 0):
+            raise ValueError("Z0 must be >= 1 for Bohr approximation")
+
+        ln_aBar = np.log(a0 / Z0)
+        ln_I = np.log((I0 * Z0**2) / r_e)
+
     
     
-    aBar_Ne = np.exp(ln_aBar)
-    I_Ne = np.exp(ln_I)
+    #aBar_Ne = np.exp(ln_aBar)
+    #I_Ne = np.exp(ln_I)
     k = 5
     
+    aBar = np.exp(ln_aBar)
+    Ibar = np.exp(ln_I)
+    tabulated = np.ndim(aBar) > 0
+
     # Other Quantities
     ne_free = np.sum(Z0 * nj) # Free electron density, per cubic m 
     Zeff = np.sum((Z0**2 * nj))/ne_free # Effective Ionization
@@ -764,9 +843,15 @@ def get_nuD_nuS(p,Z,Z0,nj,T,element='Ne'): # default Ne
     nuS = lnAee
     nuD = lnAee + Zeff * lnAei
     for j in range(1,Z.shape[0]):
-        hj = p * np.sqrt(gamma-1) / I_Ne[Z0[j]]
+        I_j = Ibar[Z0[j]] if tabulated else Ibar
+        a_j = aBar[Z0[j]] if tabulated else aBar
+
+        hj = p * np.sqrt(gamma-1) / I_j
+        pabar1p5 = (p * a_j)**1.5
+
+        #hj = p * np.sqrt(gamma-1) / I_Ne[Z0[j]]
         F1j = 1/k * np.log(1+hj**k) - beta**2
-        pabar1p5 = (p*aBar_Ne[Z0[j]])**1.5
+        #pabar1p5 = (p*aBar_Ne[Z0[j]])**1.5
         nuS = nuS + (nj[j] / ne_free)  * Ne[j] * F1j
         nuD = nuD + (nj[j] / ne_free) * ( 
                       (2/3 * (Z[j]**2 - Z0[j]**2)) * np.log(pabar1p5+1)
@@ -825,6 +910,131 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
 
 # END OF HESSLOW AVALANCHING #
 
+### HOT TAIL FUNCTIONS ###
+
+def getf(v, n0, vT0, tau):
+    """
+    Corrected Maxwellian with tau
+    v: velocity (m/s)
+    n0: density (m^-3)
+    vT0: initial thermal speed (m/s)
+    tau: no units
+    returns:
+    f : m^3 
+    """
+    prefactor = n0 / (np.pi**1.5 * vT0**3)
+    expo = -((v**3/vT0**3) + 3*tau)**(2/3)
+    return prefactor * np.exp(expo)
+
+def getfm(v, n0, vT):
+    """
+    Basic one without tau
+    v: velocity (m/s)
+    n0: density (m^-3)
+    vT: current thermal speed (m/s)
+    returns:
+    f : m^3 
+    """
+    prefactor = n0 / (np.pi**1.5 * vT**3)
+    expo = -((v**2/vT**2))
+    return prefactor * np.exp(expo)
+
+
+def temperature(t, T0, Tf, t0):
+    """
+    Parameters:
+    t: Time (s)
+    T0: initial temp (eV)
+    Tfinal: final temp (eV)
+    t0: initial time (s)
+    """
+    return Tf + (T0 - Tf) * np.exp(-t / t0)
+
+def getnu0(n, T0):
+    """
+    Parameters:
+    T: temp (joules)
+    vT: initial time (s)
+    returns rate in s^-1
+    """
+    vT0 = np.sqrt(2 * T0 * const.e / const.m_e) # m/s
+    lnL = 15 
+    return n*const.e**4 * lnL/(4*np.pi * const.epsilon_0**2 * const.m_e**2 * vT0**3)
+
+def getTau(nu0, t, t0):
+    """
+    t0: initial time (s)
+    t: time (s)
+    nu0: collision rate (s^-1)
+    returns:
+    tau (no unit) 
+    """
+    # commented line includes time delay; otherwise set to be 0
+    #return nu0 * max(0.0, t - t0)
+    return nu0 * max(0.0, t - 0)
+
+def get_vc(T,E,ne):
+    lnA = 15
+    Ed = getDreicerField(ne,lnA,T) # V/m
+    vc2 = (T * const.e / const.m_e) * (Ed / E)
+    return np.sqrt(vc2)
+
+# define the hot-tail function
+
+def getHT(n0,T0,E0,T,t,t0):
+    # n0 [per cubic m] = density
+    # T0 [eV] = initial temperature
+    # T [eV] = temperature at time t
+    # E0 [V/m] = initial E-field 
+    # t [s] = time
+    # t0 [s] = temp. decay time
+    
+    # thermal velocities
+    vT0 = np.sqrt(2 * T0 * const.e / const.m_e) # m/s
+    vT = np.sqrt(2 * T * const.e / const.m_e) # m/s
+    
+    # Collision freq.
+    nu0 = getnu0(n0, T0)
+    
+    # get the distribution function
+    x = np.linspace(0, 50, int(5e4))      # x = (v / vT0)^2
+    v = np.sqrt(x)*vT0
+    fm = getfm(v, n0, vT) # cold maxwellian
+    tau = getTau(nu0, t, t0)
+    f = getf(v, n0, vT0, tau) # hot population
+    ftot = fm + f # total distribution
+    
+    # Electric field
+    E = E0 * (T/T0)**(-3/2)
+    vc = get_vc(T,E,n0) # m/s
+    
+    # Now integrate from vc to inf
+    idx = np.argwhere(v >= vc)
+    idx = idx.flatten()
+    return np.trapz(4 * np.pi * (v[idx]**2-vc**2) * ftot[idx],v[idx]) # per cubic m
+
+def dHT_dt(n0, T0, Tf, E0, t, t0=0, dt=1e-6):
+    """
+    time derivative(hot tail rate)
+    Parameters:
+    n0: density [m^-3]
+    T0: initial temperature [eV]
+    Tf: final temperature [eV]
+    E0: initial electric field [V/m]
+    t: time [s]
+    t0: temperature decay time [s]
+    dt : time step [s]
+    """
+
+    T_plus  = temperature(t + dt, T0, Tf, t0)
+    T_minus = temperature(t - dt, T0, Tf, t0)
+    HT_plus = getHT(n0, T0, E0, T_plus,  t + dt, t0)
+    HT_minus= getHT(n0, T0, E0, T_minus, t - dt, t0)
+
+    #return (HT_plus - HT_minus) / (2 * dt)
+    return max(0.0, (HT_plus - HT_minus) / (2 * dt))
+
+    
 
 # Zero-D Solver Class
 
@@ -837,6 +1047,7 @@ class solver0D:
         self.L = 1.85e-6 # inductance [H]
         self.k = 1 # elongation
         self.Btor = 12.2 # Toroidal Field [Tesla]
+        self.E0 = 0.01 # initial electric field [V/m]
         
         # IC
         self.I0 = 8.7e6 # Initial plasma current [ampere]
@@ -859,6 +1070,7 @@ class solver0D:
         self.iTritium = 0
         self.iCompton = 0 
         self.iAvalanche = 3
+        self.iHotTail = 0
         
         self.tmax = 5e-3 # s, max. solution time
         
@@ -870,6 +1082,7 @@ class solver0D:
         print('ni [per cubic m] = %1.3g'%(self.ni))
         print('Inductance L [Henry] = %1.3g'%(self.L))
         print('Btor [Tesla] = %1.3g'%(self.Btor))
+        print('Initial electric field [V/m] = %1.3g'%(self.E0))
         
         print("\n Initial Values and TQ:")
         
@@ -886,7 +1099,7 @@ class solver0D:
         print('Added Impurity Z, A [-] = %1.0f, %1.0f'%(self.Z_imp,self.A_imp))
         
         print("\n RE Source Settings: \n")
-        print('Primary: iDreicer = %d, iTritium = %d, iCompton = %d'%(self.iDreicer,self.iTritium,self.iCompton))
+        print('Primary: iDreicer = %d, iTritium = %d, iCompton = %d, iHotTail = %d'%(self.iDreicer,self.iTritium,self.iCompton,self.iHotTail))
         print('Secondary: iAvalanche = %d'%(self.iAvalanche))
         
         
@@ -907,7 +1120,20 @@ class solver0D:
         ntot = self.ni + self.nD + self.Z_imp * self.n_imp
         return nfree, ntot
     
-    def getPrimaryRates(self, E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed):
+    def dHT_dt(self, t, dt=1e-6):
+        """
+        Hot-tail generation rate using solver's temperature evolution
+        """
+
+        T_plus  = self.getTemp(t)
+        T_minus = self.getTemp(t)
+
+        HT_plus  = getHT(self.ni, self.T0, self.E0, T_plus,  t + dt, self.t0)
+        HT_minus = getHT(self.ni, self.T0, self.E0, T_minus, t - dt, self.t0)
+
+        return max(0.0, (HT_plus - HT_minus) / (2 * dt))
+    
+    def getPrimaryRates(self, E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed, t):
 
         if self.iDreicer == 1:
             SD = getDreicerSource(E_star,ne,lnA,Zeff,T) # per m3 per s, Classical Dreicer
@@ -928,10 +1154,17 @@ class solver0D:
                 SC =  getComptonSource(E_star,ntot,'ARC-NP') # Use Non Prompt Flux
         else:
             SC = 0;
-
+        
+        # add hot tail
+        if (self.iHotTail == 1):
+            HT = self.dHT_dt(t, dt=1e-7)  # per m^3 per s
+        else:
+            HT = 0
 
         # Total Primary Contribution
-        S =  SD + ST + SC # per m3 per s
+        S =  SD + ST + SC + HT # per m3 per s
+        #print("no ht:", SD + ST +SC)
+        #print("with ht:", S)
         return S
     
     def getAvalancheRates(self,E_star,ntot,ne,T,lnA,Zeff,Zion):
@@ -960,8 +1193,14 @@ class solver0D:
                 element = 'Ar'
             elif (self.Z_imp==10):
                 element = 'Ne'
+            elif (self.Z_imp==4):
+                element = 'Be'
+            elif (self.Z_imp==6):
+                element = 'C'
+            elif (self.Z_imp==74):
+                element = 'W'
             else:
-                raise Exception("Impurity not available")
+                element = 'generic'
 
             Y_low = getHesslowAvalanchingRate(E_star, Z, Z0_low, nj, T, element=element, B=self.Btor)
             Y_high = getHesslowAvalanchingRate(E_star, Z, Z0_high, nj, T, element=element, B=self.Btor)
@@ -998,7 +1237,7 @@ class solver0D:
 
         # Primary Sources
 
-        Sp = self.getPrimaryRates(E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed)
+        Sp = self.getPrimaryRates(E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed, t)
         j_primary = Sp * const.c * const.e # A/m**2/s
         
         # Avalanche Rate
@@ -1021,12 +1260,14 @@ class solver0D:
         sol = solve_ivp(self.dYdt, t_span=(0,max(t)),
                 y0 = [self.I0,self.Ir0,0],
                 t_eval=t,
-                rtol=1e-8, atol=1e-10) # Solve
+                rtol=1e-5, atol=1e-7) # Solve
         Ip = sol.y[0]
         Ir = sol.y[1]
         Wk = sol.y[2]
         return t, Ip, Ir, Wk
         
+
+
 
         
         
