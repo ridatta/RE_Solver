@@ -825,8 +825,150 @@ def getHesslowAvalanchingRate(E_star,Z,Z0,nj,T,element,B=0):
 
 # END OF HESSLOW AVALANCHING #
 
+### HOT TAIL FUNCTIONS ###
 
-# Zero-D Solver Class
+def getf(v, n0, vT0, tau):
+    """
+    Corrected Maxwellian with tau
+    v: velocity (m/s)
+    n0: density (m^-3)
+    vT0: initial thermal speed (m/s)
+    tau: no units
+    returns:
+    f : m^3 
+    """
+    prefactor = n0 / (np.pi**1.5 * vT0**3)
+    expo = -((v**3/vT0**3) + 3*tau)**(2/3)
+    return prefactor * np.exp(expo)
+
+def getfm(v, n0, vT):
+    """
+    Basic one without tau
+    v: velocity (m/s)
+    n0: density (m^-3)
+    vT: current thermal speed (m/s)
+    returns:
+    f : m^3 
+    """
+    prefactor = n0 / (np.pi**1.5 * vT**3)
+    expo = -((v**2/vT**2))
+    return prefactor * np.exp(expo)
+
+
+def temperature(t, T0, Tf, t0):
+    """
+    Parameters:
+    t: Time (s)
+    T0: initial temp (eV)
+    Tfinal: final temp (eV)
+    t0: initial time (s)
+    """
+    return Tf + (T0 - Tf) * np.exp(-t / t0)
+
+def getnu0(n, T0):
+    """
+    Parameters:
+    T: temp (joules)
+    vT: initial time (s)
+    returns rate in s^-1
+    """
+    vT0 = np.sqrt(2 * T0 * const.e / const.m_e) # m/s
+    lnL = 15 
+    return n*const.e**4 * lnL/(4*np.pi * const.epsilon_0**2 * const.m_e**2 * vT0**3)
+
+def getTau(nu0, t, t0):
+    """
+    t0: initial time (s)
+    t: time (s)
+    nu0: collision rate (s^-1)
+    returns:
+    tau (no unit) 
+    """
+    # commented line includes time delay; otherwise set to be 0
+    #return nu0 * max(0.0, t - t0)
+    return nu0 * max(0.0, t - 0)
+
+def get_vc(T,E,ne):
+    lnA = 15
+    Ed = getDreicerField(ne,lnA,T) # V/m
+    vc2 = (T * const.e / const.m_e) * (Ed / E)
+    return np.sqrt(vc2)
+
+# define the hot-tail function
+
+def getHT(ne,T0,E0,T,t,t0=0):
+    # ne [per cubic m] = electron density
+    # T0 [eV] = initial temperature
+    # T [eV] = temperature at time t
+    # E0 [V/m] = initial E-field 
+    # t [s] = time
+    # t0 [s] = temp. decay time, usually used in caluclation of tau but DREAM sets this to 0
+    
+    # thermal velocities
+    vT0 = np.sqrt(2 * T0 * const.e / const.m_e) # m/s
+    vT = np.sqrt(2 * T * const.e / const.m_e) # m/s
+    
+    # Collision freq.
+    nu0 = getnu0(ne, T0)
+    
+    # get the distribution function
+    x = np.linspace(0, 50, int(5e4))      # x = (v / vT0)^2
+    v = np.sqrt(x)*vT0
+    fm = getfm(v, ne, vT) # cold maxwellian
+    tau = getTau(nu0, t, t0)
+    f = getf(v, ne, vT0, tau) # hot population
+    ftot = fm + f # total distribution
+    
+    # Electric field
+    E = E0 * (T/T0)**(-3/2)
+    vc = get_vc(T,E,ne) # m/s
+    
+    # Now integrate from vc to inf
+    idx = np.argwhere(v >= vc)
+    idx = idx.flatten()
+    return np.trapz(4 * np.pi * (v[idx]**2-vc**2) * ftot[idx],v[idx]) # per cubic m
+
+def dHT_dt(n0, T0, Tf, E0, t, t0=0, dt=1e-6):
+    """
+    time derivative(hot tail rate)
+    Parameters:
+    n0: density [m^-3]
+    T0: initial temperature [eV]
+    Tf: final temperature [eV]
+    E0: initial electric field [V/m]
+    t: time [s]
+    t0: temperature decay time [s]
+    dt : time step [s]
+    """
+
+    T_plus  = temperature(t + dt, T0, Tf, t0)
+    T_minus = temperature(t - dt, T0, Tf, t0)
+    HT_plus = getHT(n0, T0, E0, T_plus,  t + dt, t0)
+    HT_minus= getHT(n0, T0, E0, T_minus, t - dt, t0)
+
+    #return (HT_plus - HT_minus) / (2 * dt)
+    return max(0.0, (HT_plus - HT_minus) / (2 * dt))
+
+def get_HT_rate(ne,T,t,T0,E0,nht,dt):
+    # Returns the HT rate in [per cubuc m per s] and the new HT density [per cubic m]
+    # Inputs:
+    # ne = electron density [per cubic m]
+    # T [eV] = temp.
+    # t [s] = time
+    # T0 [eV], E0 [V/m] = initial Temp. & E-field
+    # nht = previous HT value [per cubic m]
+    # dt = time step [s]
+    nht_new = max(nht,getHT(ne,T0,E0,T,t))
+    rate = (nht_new - nht) / dt
+    return rate, nht_new
+
+
+## End of Hottail functions ##
+#########################################################
+
+######################################################### 
+###################  Zero-D Solver Class ################
+#########################################################
 
 class solver0D:
     def __init__(self):
