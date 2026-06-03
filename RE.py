@@ -995,6 +995,10 @@ class solver0D:
         self.Z_imp = 10 # impuurity atomic no.
         self.A_imp = 20 # impurity weight
         
+        # Vloop Settings
+        self.V0 = 0.0 # Volts, pre TQ loop voltage
+        self.Vf = 0.0 # Volts, post TQ loop voltage
+        
         # Settings
         
         self.iDreicer = 1
@@ -1004,6 +1008,7 @@ class solver0D:
         
         self.tmax = 5e-3 # s, max. solution time
         self.idiag = False # stores detale doutput if true
+
         
     def display(self):
         print("\n Constants:")
@@ -1021,6 +1026,8 @@ class solver0D:
         print('Init. Temp. T0 [eV] = %1.3g'%(self.T0))
         print('Final Temp. Tf [eV] = %1.3g'%(self.Tf))
         print('Temp. decay time t0 [s] = %1.3g'%(self.t0))
+        print('Init. Vloop V0 [V] = %1.3g'%(self.V0))
+        print('Final Vloop Vf [V] = %1.3g'%(self.Vf))
         
         print("\n Impurity Settings:")
         
@@ -1112,7 +1119,8 @@ class solver0D:
         return Yav
         
         
-
+    def getVloop(self,T):
+        return self.V0 + (self.Vf-self.V0) * (1 + np.tanh(-(T-self.Tf)/self.t0))
         
     def dYdt(self,t,Y):
         # Y[0] = Plasma Current [A]
@@ -1137,6 +1145,9 @@ class solver0D:
         Ec = getConnorHastieField(ne,lnA) # Connor-Hastie Critical Field, [N/C]
         Ed = getDreicerField(ne,lnA,T) # [N/C] Dreicer Field
         E_star = Epar / Ec # Normalized field [-]
+        
+        # Externally driven loop voltage
+        Vloop = self.getVloop(T)
 
 
         # Primary Sources
@@ -1148,7 +1159,7 @@ class solver0D:
         Yav = self.getAvalancheRates(E_star,ntot,ne,T,lnA,Zeff,Z)
 
         # Derivatives
-        dIpdt = -2 * np.pi * self.R0 * Epar / self.L # [A/s]
+        dIpdt = -2 * np.pi * self.R0 * Epar / self.L + Vloop / self.L # [A/s]
         dIrdt = j_primary * np.pi * self.a**2 + Yav * Ir # [A/s]
         if (E_star > 1):
             dWkindt = 2 * np.pi * self.R0 * Ir * Epar
@@ -1172,6 +1183,7 @@ class solver0D:
         # Diagnostics
         if (self.idiag == True): # Calculate detailed output
             T = self.getTemp(t)
+            Vloop = self.getVloop(T) # Volts
             Z = self.getImpurityIonization(T)
             ne, ntot = self.getElecDensity(Z)
             Zeff = (self.ni + self.nD + self.n_imp * Z**2) / ne
@@ -1182,7 +1194,9 @@ class solver0D:
             Ed = getDreicerField(ne,lnA,T) # [N/C] Dreicer Field
             E_star = Epar / Ec # Normalized field [-]
 
-
+            
+            temp = self.iCompton 
+            
             self.iCompton = 0
             Sp, SD, ST, SC = self.getPrimaryRates(E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed)
 
@@ -1191,6 +1205,7 @@ class solver0D:
             for i in range(len(t)):
                 mode = 'ARC-P' if T[i] >= 2600 else 'ARC-NP'
                 SC[i] = getComptonSource(E_star[i], ntot, mode)
+            self.iCompton = temp
 
             if (self.iAvalanche != 3):
                 Yav = self.getAvalancheRates(E_star,ntot,ne,T,lnA,Zeff,Z)
@@ -1205,6 +1220,7 @@ class solver0D:
             self.diag = {
                 't': t,
                 'Te': T,
+                'Vloop': Vloop,
                 'ne': ne,
                 'Zeff': Zeff,
                 'Epar': Epar,
