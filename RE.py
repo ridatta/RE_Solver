@@ -994,6 +994,8 @@ class solver0D:
         self.n_imp = 1e-11 # impurity density
         self.Z_imp = 10 # impuurity atomic no.
         self.A_imp = 20 # impurity weight
+        self.prescibe_nz_evolution = False
+        self.Zeff_scale = 1.0
         
         # Vloop Settings
         self.V0 = 0.0 # Volts, pre TQ loop voltage
@@ -1006,6 +1008,7 @@ class solver0D:
         self.iCompton = 0 
         self.iAvalanche = 1
         
+        self.tstart = 0.0 # s, start time
         self.tmax = 5e-3 # s, max. solution time
         self.idiag = False # stores detale doutput if true
 
@@ -1042,19 +1045,37 @@ class solver0D:
         
         
         
-    def getTemp(self,t):
-        return (self.T0 - self.Tf)* np.exp(-t/self.t0) + self.Tf # eV, Time-varying temperature
+
+    def getTemp(self, t):
+        return np.where(
+            t < self.tstart,
+            self.T0,
+            (self.T0 - self.Tf) * np.exp(-(t - self.tstart) / self.t0) + self.Tf)
     
-    def getImpurityIonization(self,T):
+    def get_nimp(self, t):
+        if self.prescibe_nz_evolution:
+            n0, n1, n2 = 3.2e-4, 9.6e-4, 5.7e-4
+            out = n0 + (n1-n0) * (1 + np.tanh((t-45e-3)/self.t0))/2 + (n2 - n1) * (1 + np.tanh((t-220e-3)/(3*self.t0)))/2
+            return out*self.ni
+        else:
+            return self.n_imp * (t + 1e-6) / (t + 1e-6)
+    
+    def getImpurityIonization(self,T,n_imp):
+        
         return getZbarTF(self.Z_imp, self.A_imp,
-                    SI2cgs(self.A_imp*self.n_imp*const.m_p,'Mass Density'),
+                    SI2cgs(self.A_imp*n_imp*const.m_p,'Mass Density'),
                     T)[0] # caluclate ionization level using LTE Thomas-Fermi model
         #return getNeZ(T) # Using ADAS Coronal Eqm. Model
         
-    def getElecDensity(self,Z):
+    def getElecDensity(self,Z,n_imp=None):
         
-        nfree = 1 * self.ni + 1 * self.nD + Z * self.n_imp
-        ntot = self.ni + self.nD + self.Z_imp * self.n_imp
+        if n_imp is None:
+            n_imp = self.n_imp
+        else:
+            n_imp = n_imp
+        
+        nfree = 1 * self.ni + 1 * self.nD + Z * n_imp
+        ntot = self.ni + self.nD + self.Z_imp * n_imp
         return nfree, ntot
     
     def getPrimaryRates(self, E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed):
@@ -1119,8 +1140,11 @@ class solver0D:
         return Yav
         
         
-    def getVloop(self,T):
-        return self.V0 + (self.Vf-self.V0) * (1 + np.tanh(-(T-self.Tf)/self.t0))
+    def getVloop(self,T,t):
+#         return self.V0 + (self.Vf-self.V0) * (1 + np.tanh(-(T-self.Tf)/self.t0))
+        return (self.V0 +
+                (self.Vf-self.V0) * (1 + np.tanh((t-120e-3)/self.t0))/2 
+                - 2.0 * (1+np.tanh((t-170e-3)/self.t0))/2)
         
     def dYdt(self,t,Y):
         # Y[0] = Plasma Current [A]
@@ -1135,9 +1159,10 @@ class solver0D:
 
         # Prescribed Thermal Quench
         T = self.getTemp(t)
-        Z = self.getImpurityIonization(T)
-        ne, ntot = self.getElecDensity(Z)
-        Zeff = (self.ni + self.nD + self.n_imp * Z**2) / ne
+        nimp = self.get_nimp(t) # impurity density
+        Z = self.getImpurityIonization(T,nimp)
+        ne, ntot = self.getElecDensity(Z,n_imp=nimp)
+        Zeff = (self.ni + self.nD + nimp * Z**2) / ne * self.Zeff_scale
 
         lnA = getCoulombLog(ne,T) # Coulomb logarithm
         eta = 0.51 * getTransSpitzerResistivity(lnA,T,Zeff) * 0.01 # Ohm-m
@@ -1147,7 +1172,7 @@ class solver0D:
         E_star = Epar / Ec # Normalized field [-]
         
         # Externally driven loop voltage
-        Vloop = self.getVloop(T)
+        Vloop = self.getVloop(T,t)
 
 
         # Primary Sources
@@ -1183,10 +1208,11 @@ class solver0D:
         # Diagnostics
         if (self.idiag == True): # Calculate detailed output
             T = self.getTemp(t)
-            Vloop = self.getVloop(T) # Volts
-            Z = self.getImpurityIonization(T)
-            ne, ntot = self.getElecDensity(Z)
-            Zeff = (self.ni + self.nD + self.n_imp * Z**2) / ne
+            Vloop = self.getVloop(T,t) # Volts
+            nimp = self.get_nimp(t) # impurity density
+            Z = self.getImpurityIonization(T,nimp)
+            ne, ntot = self.getElecDensity(Z,nimp)
+            Zeff = (self.ni + self.nD + nimp * Z**2) / ne * self.Zeff_scale
             lnA = getCoulombLog(ne,T) # Coulomb logarithm
             eta = 0.51 * getTransSpitzerResistivity(lnA,T,Zeff) * 0.01 # Ohm-m
             Epar = eta*(Ip - Ir) / (np.pi * self.a**2 * self.k) # Parallel E-field [N/C]
@@ -1204,16 +1230,16 @@ class solver0D:
             SC = np.zeros_like(Sp)
             for i in range(len(t)):
                 mode = 'ARC-P' if T[i] >= 2600 else 'ARC-NP'
-                SC[i] = getComptonSource(E_star[i], ntot, mode)
+                SC[i] = getComptonSource(E_star[i], ntot[i], mode)
             self.iCompton = temp
 
             if (self.iAvalanche != 3):
-                Yav = self.getAvalancheRates(E_star,ntot,ne,T,lnA,Zeff,Z)
+                Yav = self.getAvalancheRates(E_star,ntot[i],ne[i],T,lnA,Zeff,Z)
             else:
                 Yav = np.zeros_like(t)
                 for ii in range(Yav.shape[0]):
                     Yav[ii] = self.getAvalancheRates(E_star[ii],
-                                                     ntot,ne[ii],
+                                                     ntot[ii],ne[ii],
                                                      T[ii],lnA[ii],
                                                      Zeff[ii],Z[ii])
 
@@ -1223,6 +1249,7 @@ class solver0D:
                 'Vloop': Vloop,
                 'ne': ne,
                 'Zeff': Zeff,
+                'nimp': nimp,
                 'Epar': Epar,
                 'E_star': E_star,
                 'EoED': Epar/Ed,
