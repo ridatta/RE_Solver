@@ -1043,6 +1043,11 @@ class solver0D:
         print('Secondary: iAvalanche = %d'%(self.iAvalanche))
         
         
+        print("\n Other Settings: \n")
+        print('tstart [s] = %1.3g'%(self.tstart))
+        print('tmax [s] = %1.3g'%(self.tmax))
+        print('Zeff_scale [-] =' + str(self.Zeff_scale))
+        
         
         
 
