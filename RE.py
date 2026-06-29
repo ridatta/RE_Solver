@@ -1070,15 +1070,19 @@ class solver0D:
         self.tstart = 0.0 # s, start time
         self.tmax = 5e-3 # s, max. solution time
         self.idiag = False # stores detale doutput if true
+        self.device = 'SPARC'
 
-        self.device = 'ARC'
+
+        
+    def display(self):
+        print("\n Constants:")
         print('Major radius R0 [m] = %1.3f'%(self.R0))
         print('Minor radius a [m] = %1.3f'%(self.a))
         print('Elongation k [-] = %1.3f'%(self.k))
         print('ni [per cubic m] = %1.3g'%(self.ni))
         print('Inductance L [Henry] = %1.3g'%(self.L))
         print('Btor [Tesla] = %1.3g'%(self.Btor))
-
+        
         print("\n Initial Values and TQ:")
         
         print('Init. Plasma Current I0 [A] = %1.3g'%(self.I0))
@@ -1098,13 +1102,13 @@ class solver0D:
         print("\n RE Source Settings: \n")
         print('Primary: iDreicer = %d, iTritium = %d, iCompton = %d'%(self.iDreicer,self.iTritium,self.iCompton))
         print('Secondary: iAvalanche = %d'%(self.iAvalanche))
-
-
+        
+        
         print("\n Other Settings: \n")
         print('tstart [s] = %1.3g'%(self.tstart))
         print('tmax [s] = %1.3g'%(self.tmax))
         print('Zeff_scale [-] =' + str(self.Zeff_scale))
-        print('device [-] =' + str(self.device))
+        print('device [-] = ' + str(self.device))
 
 
     def getTemp(self, t):
@@ -1293,15 +1297,15 @@ class solver0D:
             self.iCompton = 0
             Sp, SD, ST, SC = self.getPrimaryRates(E_star, ne, ntot, lnA, Zeff, T, Z, Epar, Ed)
 
-            self.iCompton = 1
-            SC = np.zeros_like(Sp)
-            for i in range(len(t)):
-                mode = self.device+'-P' if T[i] >= 2600 else self.device+'-NP'
-                SC[i] = getComptonSource(E_star[i], ntot[i], mode)
             self.iCompton = temp
+            SC = np.zeros_like(E_star)
+            if (self.iCompton == 1):
+                for i in range(len(t)):
+                    mode = self.device+'-P' if T[i] >= 2600 else self.device+'-NP'
+                    SC[i] = getComptonSource(E_star[i], ntot[i], mode)
 
             if (self.iAvalanche != 3):
-                Yav = self.getAvalancheRates(E_star,ntot[i],ne[i],T,lnA,Zeff,Z)
+                Yav = self.getAvalancheRates(E_star,ntot,ne,T,lnA,Zeff,Z)
             else:
                 Yav = np.zeros_like(t)
                 for ii in range(Yav.shape[0]):
@@ -1310,9 +1314,8 @@ class solver0D:
                                                      T[ii],lnA[ii],
                                                      Zeff[ii],Z[ii])
             if (self.iTritium == 0):
-                ST = np.zeros_like(Sp)
-            if (self.iCompton == 0):
-                SC = np.zeros_like(Sp)
+                ST = np.zeros_like(E_star)
+
 
             self.diag = {
                 't': t,
