@@ -1315,6 +1315,8 @@ class solver0D:
                                                      Zeff[ii],Z[ii])
             if (self.iTritium == 0):
                 ST = np.zeros_like(E_star)
+            if (self.iDreicer == 0):
+                SD = np.zeros_like(E_star)
 
 
             self.diag = {
