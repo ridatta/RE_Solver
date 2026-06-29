@@ -504,10 +504,14 @@ def getComptonSource(E_star,ne,device='ITER'):
         # Normalized Gamma Flux Spectrum [per MeV]
         z = (np.log(E_gamma) + 1.2) 
         Gamma = 1e18 * np.exp(-np.exp(-z) - z + 1) / 1.9724492150892259 # [#/m**2/s/MeV]
-    elif device == 'SPARC':
+    elif device == 'SPARC-P':
         data = np.loadtxt(data_path + 'SPARC_Gamma_Flux.csv')
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
         Gamma = f(E_gamma) # [#/m**2/s/MeV]
+    elif device == 'SPARC-NP':
+        data = np.loadtxt(data_path + 'SPARC_Gamma_Flux.csv')
+        f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
+        Gamma = 1e-3 * f(E_gamma) # [#/m**2/s/MeV]
     elif device == 'ARC-P':
         data = np.loadtxt(data_path + 'ARC_Prompt_Gamma_Flux.csv')
         f = interp1d(data[0,:],data[1,:],fill_value="extrapolate")
@@ -1011,6 +1015,8 @@ class solver0D:
         self.tstart = 0.0 # s, start time
         self.tmax = 5e-3 # s, max. solution time
         self.idiag = False # stores detale doutput if true
+        
+        self.device = 'ARC'
 
         
     def display(self):
@@ -1047,6 +1053,7 @@ class solver0D:
         print('tstart [s] = %1.3g'%(self.tstart))
         print('tmax [s] = %1.3g'%(self.tmax))
         print('Zeff_scale [-] =' + str(self.Zeff_scale))
+        print('device [-] =' + str(self.device))
         
         
         
@@ -1099,9 +1106,9 @@ class solver0D:
 
         if (self.iCompton == 1):
             if T >= 2.6e3:
-                SC = getComptonSource(E_star,ntot,'ARC-P') # Use Prompt Flux
+                SC = getComptonSource(E_star,ntot,self.device+'-P') # Use Prompt Flux
             else:
-                SC =  getComptonSource(E_star,ntot,'ARC-NP') # Use Non Prompt Flux
+                SC =  getComptonSource(E_star,ntot,self.device+'-NP') # Use Non Prompt Flux
         else:
             SC = 0;
 
@@ -1234,7 +1241,7 @@ class solver0D:
             self.iCompton = 1
             SC = np.zeros_like(Sp)
             for i in range(len(t)):
-                mode = 'ARC-P' if T[i] >= 2600 else 'ARC-NP'
+                mode = self.device+'-P' if T[i] >= 2600 else self.device+'-NP'
                 SC[i] = getComptonSource(E_star[i], ntot[i], mode)
             self.iCompton = temp
 
@@ -1247,6 +1254,10 @@ class solver0D:
                                                      ntot[ii],ne[ii],
                                                      T[ii],lnA[ii],
                                                      Zeff[ii],Z[ii])
+            if (self.iTritium == 0):
+                ST = np.zeros_like(Sp)
+            if (self.iCompton == 0):
+                SC = np.zeros_like(Sp)
 
             self.diag = {
                 't': t,
