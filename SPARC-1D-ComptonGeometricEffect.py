@@ -111,8 +111,8 @@ def plot_Ip_Ir(out,clr,lbl):
 	plt.plot(out['t'],out['Ir'],ls='--',color=clr,label=lbl+', Ir');
 	
 def plot_jp_jr(out,clr,lbl):
-	plt.plot(out['r']/out['rmax'],out['jp'],ls='-',color=clr,label=lbl+', Ip');
-	plt.plot(out['r']/out['rmax'],out['jr'],ls='--',color=clr,label=lbl+', Ir');
+	plt.plot(out['r']/out['rmax'],out['jp'],ls='-',color=clr,label=lbl+', jp');
+	plt.plot(out['r']/out['rmax'],out['jr'],ls='--',color=clr,label=lbl+', jr');
 
 # Ip, Ir
 fig = plt.figure();
