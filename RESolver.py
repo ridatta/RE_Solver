@@ -32,6 +32,11 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     dr = rmax / (nx-1) # [m], resolution
     r = np.linspace(1e-3,rmax,nx) # grid
     
+    ### Geometric factor for Compton Scattering - flux localized at wall/boundary for circular plasma
+    compton_geom_factor = np.arcsin(r/rmax)/(r/rmax);
+    #compton_geom_factor[r==0] = 1; # limit as argument --> 0
+    compton_geom_factor*=2/np.pi;
+    
     print('nx = %d\n'%nx)
     print('I0 [MA] = %1.3g\n'%(2*np.pi*np.trapz(jp*r,x=r)*1e-6))
     print('Ir (t = 0) [MA] = %1.3g\n'%(2*np.pi*np.trapz(jr*r,x=r)*1e-6))
@@ -50,8 +55,10 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
         gamma = gamma + (1/ne * getDreicerSource(Estar,ne,lnA,Zeff,T))
     if iTritBeta:
         gamma = gamma + analy_beta_source(Estar)
-    if iCompton:
+    if iCompton==1:
         gamma = gamma + analy_compton_source(Estar)
+    if iCompton==2: # include geometric effect of flux coming from circular wall at the boundary
+        gamma = gamma + analy_compton_source(Estar)*compton_geom_factor;
     tau = 1/np.max(gamma) # [s]
     dt = np.min([dr * CFL / U,CFL*tau]) # Take the smaller time
     print("Time Step dt [ms] = %1.3g\n"%(dt*1e3))
@@ -86,8 +93,11 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
                 S_primary = S_primary + getDreicerSource(E_star,ne,lnA,Zeff,T) # Dreicer Source, m**-3/s
             if iTritBeta:
                 S_primary = S_primary + 0.5 * n0 * analy_beta_source(E_star) # Beta Source, m**-3/s
-            if iCompton:
+            if iCompton==1:
                 S_primary =  S_primary + ne * analy_compton_source(E_star) # Compton Source, m**-3/s
+                #S_primary =  S_primary + getComptonSource(E_star,ne,device=) # Compton Source, m**-3/s
+            if iCompton==2: # including geometric effects
+                S_primary =  S_primary + ne * analy_compton_source(E_star) * compton_geom_factor # Compton Source, m**-3/s
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
@@ -156,5 +166,6 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     out['constants'] = constants
     out['li'] = li
     out['T'] = T
+    out['r'], out['rmax'] = r,rmax
     return out
 
