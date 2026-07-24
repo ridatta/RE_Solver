@@ -88,7 +88,7 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
                 S_primary = S_primary + 0.5 * n0 * analy_beta_source(E_star) # Beta Source, m**-3/s
             if iCompton:
                 S_primary =  S_primary + ne * analy_compton_source(E_star) # Compton Source, m**-3/s
-            gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
+            gamma_av = iAvalanche * get_avalance_growth_rate_RP(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
             S_primary = np.zeros_like(E)
