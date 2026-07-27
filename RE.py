@@ -1258,7 +1258,7 @@ class solver0D:
         dIpdt = -2 * np.pi * self.R0 * Epar / self.L + Vloop / self.L # [A/s]
         dIrdt = j_primary * np.pi * self.a**2 + Yav * Ir # [A/s]
         if (E_star > 1):
-            dWkindt = 2 * np.pi * self.R0 * Ir * Epar
+            dWkindt = 2 * np.pi * self.R0 * Ir * (Epar - Ec)
         else:
             dWkindt = 0
 
@@ -1333,7 +1333,8 @@ class solver0D:
                 'gamma_ava': Yav,
                 'SD': SD,
                 'ST': ST,
-                'SC': SC
+                'SC': SC,
+                'Z' : Z
             }
 
 
