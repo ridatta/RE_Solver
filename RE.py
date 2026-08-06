@@ -483,7 +483,41 @@ def analy_compton_source(E_star):
     return outval
 
 
+def getVolumetricComptonSource(E_star,ne,r,Y,E_gamma):
+	# E_star = electric field / Connor-hastie Field
+	# ne = total electron denisty n_free + n_bound [m**-3]
+	# r = radial array [m]
+	# Y = gamma emissivity [photons/m^3/s]
+	# E_gamma = gamma energy [MeV]
+	# NOTE that this assumes an emissivity with single energy, delta function, which could be updated
 
+	if isinstance(E_star, np.ndarray):
+		alpha 	= E_star.copy(); # Field normalized by Conor-Hastie field, must be greater than 1 for Dreicer source
+		alpha[np.where(alpha<1)]=1 + 1e-6;
+	else:
+		alpha 	= np.max(np.array([E_star,1+1e-6]));
+		
+	Wc 		= getCriticalRunawayEnergy(alpha); # J
+	Wc 		= Wc / const.eV * 1e-6; # MeV
+	##print(Wc);
+	
+	Flux_outward 	= 1/r*cumulative_trapezoid(Y*r,x=r,initial=0); # flux of photons from inside to outside of flux surface [photons/m2/s]
+	
+	Flux_inward 	= np.zeros_like(r);
+	for i in range(len(r)):
+		Flux_inward[i] = 1/np.pi * np.trapz(Y[i:]*r[i:]/r[i]*np.arcsin(r[i]/r[i:]),x=r[i:]); # flux of photons from outside to inside of flux surface [photons/m2/s]
+	
+	Flux_total 	= Flux_outward + 2*Flux_inward; # because flux going in must also come out (assuming long mean free path of photon)
+	
+	sigma 		= np.zeros_like(Wc);
+	for i in range(Wc.shape[0]):
+	    if Wc[i] > E_gamma:	sigma[i] = 0;
+	    else: 		sigma[i] = getScatteringXSection(np.array([E_gamma]),Wc[i]) # m^2, scattering x-section vs photon energy
+	    
+	S 		= Flux_total*sigma; # [electrons/s]
+	
+	return ne * S; # [electrons/m^3/s]
+	
 
 def getComptonSource(E_star,ne,device='ITER'):
      # E_star = electric field / Connor-hastie Field

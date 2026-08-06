@@ -3,7 +3,7 @@ from RE import *
 import scipy.constants as const
 from scipy.integrate import cumtrapz
 
-def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0,solveT=False):
+def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0,solveT=False,vol_gamma_data=[0,0,0]):
     # constants = [rmax, R0, ne, T, Zeff, lnA, eta]
                 # where rmax [m] = minor radius
                 # R0 [m] = major radius
@@ -20,12 +20,14 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     # nprint = # of time steps to store results
     # verbose = if true print details
     # returns out = dictionary with results
+    # vol_gamma_data = [iVolumetric,emissivity,gamma_energy] for volumetric gamma source
     
     ####
     
     rmax, R0, ne, T, Zeff, lnA, eta = constants # Constants for the solver, all units in SI except temperature [eV]
     jp, jr = init_conditions[0].copy(), init_conditions[1].copy() # Initial plasma and RE current [A/m**2]
     n0 = 1.0 * ne
+    iVolumetric,Y_gamma,E_gamma = vol_gamma_data;
     
     ## Grid ##
     nx = jp.shape[0]
@@ -34,7 +36,7 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     
     ### Geometric factor for Compton Scattering - flux localized at wall/boundary for circular plasma
     compton_geom_factor = np.arcsin(r/rmax)/(r/rmax);
-    #compton_geom_factor[r==0] = 1; # limit as argument --> 0
+    compton_geom_factor[r==0] = 1; # limit as argument --> 0
     compton_geom_factor*=2/np.pi;
     
     print('nx = %d\n'%nx)
@@ -59,6 +61,8 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
         gamma = gamma + analy_compton_source(Estar)
     if iCompton==2: # include geometric effect of flux coming from circular wall at the boundary
         gamma = gamma + analy_compton_source(Estar)*compton_geom_factor;
+    if iVolumetric==1: # include volumetric gamma emission
+    	gamma = gamma + 1/ne * getVolumetricComptonSource(Estar,ne,r,Y_gamma,E_gamma);
     tau = 1/np.max(gamma) # [s]
     dt = np.min([dr * CFL / U,CFL*tau]) # Take the smaller time
     print("Time Step dt [ms] = %1.3g\n"%(dt*1e3))
@@ -98,6 +102,8 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
                 #S_primary =  S_primary + getComptonSource(E_star,ne,device=) # Compton Source, m**-3/s
             if iCompton==2: # including geometric effects
                 S_primary =  S_primary + ne * analy_compton_source(E_star) * compton_geom_factor # Compton Source, m**-3/s
+            if iVolumetric==1: # include volumetric gamma emission
+                S_primary =  S_primary + getVolumetricComptonSource(Estar,ne,r,Y_gamma,E_gamma); # volumetric compton source, m**-3/s
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
