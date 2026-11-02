@@ -446,7 +446,7 @@ def analy_beta_source(E_star):
 
 
 
-def analy_compton_source(E_star):
+def analy_compton_source(E_star,scale_factor=1.0):
     """
     Returns the Compton rate in per second. Uses an analytical fit to the integral for faster computation.
     Multiply with total electron density to get the rate in per cubic meter per second.
@@ -480,7 +480,7 @@ def analy_compton_source(E_star):
         else:
             outval = B * np.tanh(A * (x - x0) / L) + c
 
-    return outval
+    return outval*scale_factor
 
 
 
@@ -499,7 +499,7 @@ def getComptonSource(E_star,ne,device='ITER'):
     Wc = getCriticalRunawayEnergy(alpha) # J
     Wc = Wc / const.eV * 1e-6 # MeV
 
-    E_gamma = np.logspace(-2,1.477,1000) # Gamma energies [MeV]
+    E_gamma = np.logspace(-2,1.0,1000) # Gamma energies [MeV]
     if device == 'ITER':
         # Normalized Gamma Flux Spectrum [per MeV]
         z = (np.log(E_gamma) + 1.2) 
@@ -974,7 +974,7 @@ def getHT(ne,T0,E0,T,t,t0=0):
     fm = getfm(v, ne, vT) # cold maxwellian
     tau = getTau(nu0, t, t0)
     f = getf(v, ne, vT0, tau) # hot population
-    ftot = fm + f # total distribution
+    ftot = f # total distribution
     
     # Electric field
     E = E0 * (T/T0)**(-3/2)
@@ -1148,7 +1148,7 @@ class solver0D:
         if self.iDreicer == 1:
             SD = getDreicerSource(E_star,ne,lnA,Zeff,T) # per m3 per s, Classical Dreicer
         elif self.iDreicer == 2:
-            SD = getDreicerRateHesslow(self.ni,self.n_imp,self.Z_imp,Z,Epar/Ed,T)
+            SD = getDreicerRateHesslow(self.ni+self.nD,self.n_imp,self.Z_imp,Z,Epar/Ed,T)
         else:
             SD = 0
         
@@ -1182,7 +1182,7 @@ class solver0D:
         elif (self.iAvalanche == 3): # Implement getHesslowAvalanchingRate 
          # Define arrays for species info, first element deuterium, second Neon (impurity)
             Z = np.array([1, self.Z_imp])             # Max ionization of D and Ne
-            nj = np.array([self.ni, self.n_imp])          # Densities [m^-3]
+            nj = np.array([self.ni + self.nD, self.n_imp])          # Densities [m^-3]
             # interpolation 
             Zlow = int(np.floor(Zion))
             Zhigh = int(np.ceil(Zion))
