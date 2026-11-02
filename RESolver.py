@@ -3,7 +3,7 @@ from RE import *
 import scipy.constants as const
 from scipy.integrate import cumtrapz
 
-def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0,solveT=False):
+def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0.1*3e8,nprint=500,verbose=True,RE_start=0,solveT=False,comp_scale_factor=1.0):
     # constants = [rmax, R0, ne, T, Zeff, lnA, eta]
                 # where rmax [m] = minor radius
                 # R0 [m] = major radius
@@ -56,9 +56,9 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
     if iTritBeta:
         gamma = gamma + analy_beta_source(Estar)
     if iCompton==1:
-        gamma = gamma + analy_compton_source(Estar)
+        gamma = gamma + analy_compton_source(Estar,comp_scale_factor)
     if iCompton==2: # include geometric effect of flux coming from circular wall at the boundary
-        gamma = gamma + analy_compton_source(Estar)*compton_geom_factor;
+        gamma = gamma + analy_compton_source(Estar,comp_scale_factor)*compton_geom_factor;
     tau = 1/np.max(gamma) # [s]
     dt = np.min([dr * CFL / U,CFL*tau]) # Take the smaller time
     print("Time Step dt [ms] = %1.3g\n"%(dt*1e3))
@@ -94,10 +94,10 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             if iTritBeta:
                 S_primary = S_primary + 0.5 * n0 * analy_beta_source(E_star) # Beta Source, m**-3/s
             if iCompton==1:
-                S_primary =  S_primary + ne * analy_compton_source(E_star) # Compton Source, m**-3/s
+                S_primary =  S_primary + ne * analy_compton_source(E_star,comp_scale_factor) # Compton Source, m**-3/s
                 #S_primary =  S_primary + getComptonSource(E_star,ne,device=) # Compton Source, m**-3/s
             if iCompton==2: # including geometric effects
-                S_primary =  S_primary + ne * analy_compton_source(E_star) * compton_geom_factor # Compton Source, m**-3/s
+                S_primary =  S_primary + ne * analy_compton_source(E_star,comp_scale_factor) * compton_geom_factor # Compton Source, m**-3/s
             gamma_av = iAvalanche * get_avalance_growth_rate_RP2(E_star,ne,r/R0,lnA,Zeff) # Avalanche rate, per s
         else:
             gamma_av = np.zeros_like(E)
@@ -105,8 +105,8 @@ def solve(constants,init_conditions,tmax=1e-3,CFL=0.4,RE_sources=[1,0,0,1],cre=0
             
 
         # avlanche operator used in Martin-Solis (2017)
-#         alp = np.sqrt(3*(5+Zeff)/np.pi)
-#         gamma_av =  iAvalanche * const.e * E / (const.m_e * const.c *lnA * alp) # Avalanche rate [per s]
+        alp = np.sqrt(3*(5+Zeff)/np.pi)
+        gamma_av =  iAvalanche * const.e * E / (const.m_e * const.c *lnA * alp) # Avalanche rate [per s]
 
         # Update Step #
 
