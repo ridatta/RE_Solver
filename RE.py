@@ -7,8 +7,9 @@ from weights import *
 from scipy.interpolate import interp1d
 from scipy.optimize import fsolve
 from scipy.integrate import solve_ivp
+import Rad as Rad
 
-data_path = './data/' # Path to data folder
+data_path = '/Users/rishabhdatta/MIT Dropbox/Rishabh Datta/Rishabh_EP_Group/Code/RE_Solver/data/' # Path to data folder
 
 # Important Functions Related to REs #
 
@@ -1037,6 +1038,8 @@ class solver0D:
         self.L = 1.85e-6 # inductance [H]
         self.k = 1 # elongation
         self.Btor = 12.2 # Toroidal Field [Tesla]
+        
+
 
         # IC
         self.I0 = 8.7e6 # Initial plasma current [ampere]
@@ -1046,12 +1049,19 @@ class solver0D:
         self.T0 = 5e3 # eV, initial temperature
         self.Tf = 10 # eV, final temperature
         self.t0 = 0.1e-3 # TQ time [s]
+        self.solve_p = False # Solve the pressure question instead of prescribed temperature if true
+        self.gamma = 5/3 # adiabatic gas constant
+        self.tau_loss = 1.0e5 # Thermal pressure loss time [s]
+        self._T_prev = self.T0 # eV, needed when solve_p=True
+        self.Tfloor = 5 # eV
         
         # Impurities
         self.nD = 1e-11 # added deuterium
         self.n_imp = 1e-11 # impurity density
         self.Z_imp = 10 # impuurity atomic no.
         self.A_imp = 20 # impurity weight
+        self.element = None
+        self.Z_model = 1 # Use TF model else use ADAS model
 
         self.prescibe_nz_evolution = False
         self.Zeff_scale = 1.0
@@ -1083,13 +1093,11 @@ class solver0D:
         print('Inductance L [Henry] = %1.3g'%(self.L))
         print('Btor [Tesla] = %1.3g'%(self.Btor))
         
-        print("\n Initial Values and TQ:")
+        print("\n Initial Values:")
         
         print('Init. Plasma Current I0 [A] = %1.3g'%(self.I0))
         print('Init. RE Current Ir0 [A] = %1.3g'%(self.Ir0))
-        print('Init. Temp. T0 [eV] = %1.3g'%(self.T0))
-        print('Final Temp. Tf [eV] = %1.3g'%(self.Tf))
-        print('Temp. decay time t0 [s] = %1.3g'%(self.t0))
+
         print('Init. Vloop V0 [V] = %1.3g'%(self.V0))
         print('Final Vloop Vf [V] = %1.3g'%(self.Vf))
         
@@ -1098,11 +1106,21 @@ class solver0D:
         print('Added D density [per cubic m] = %1.3g'%(self.nD))
         print('Added Impurity density [per cubic m] = %1.3g'%(self.n_imp))
         print('Added Impurity Z, A [-] = %1.0f, %1.0f'%(self.Z_imp,self.A_imp))
+        print('Impurity elm = ',self.element)
+        print('Impurity Ionization model =',self.Z_model)
         
         print("\n RE Source Settings: \n")
         print('Primary: iDreicer = %d, iTritium = %d, iCompton = %d'%(self.iDreicer,self.iTritium,self.iCompton))
         print('Secondary: iAvalanche = %d'%(self.iAvalanche))
         
+        
+        print("\n Temp. and Pressure Eqn Settings:")
+        print('Init. Temp. T0 [eV] = %1.3g'%(self.T0))
+        print('Final Temp. Tf [eV] = %1.3g'%(self.Tf))
+        print('Temp. decay time t0 [s] = %1.3g'%(self.t0))
+        print('solve_p =',self.solve_p)
+        print('Adiabatic constant gamma [-] =%1.3f'%self.gamma)
+        print('Loss time tau_loss [s] = %1.3g'%self.tau_loss)
         
         print("\n Other Settings: \n")
         print('tstart [s] = %1.3g'%(self.tstart))
@@ -1127,10 +1145,12 @@ class solver0D:
 
     def getImpurityIonization(self,T,n_imp):
 
-        return getZbarTF(self.Z_imp, self.A_imp,
+        if self.Z_model==1:
+            return getZbarTF(self.Z_imp, self.A_imp,
                     SI2cgs(self.A_imp*n_imp*const.m_p,'Mass Density'),
                     T)[0] # caluclate ionization level using LTE Thomas-Fermi model
-        #return getNeZ(T) # Using ADAS Coronal Eqm. Model
+        else:
+            return z_coronal(T, self.element) # Using ADAS Coronal Eqm. Model
 
     def getElecDensity(self,Z,n_imp=None):
 
@@ -1192,20 +1212,9 @@ class solver0D:
             Z0_low = np.array([1, Zlow])
             Z0_high = np.array([1, Zhigh])
 
-            if (self.Z_imp==18):
-                element = 'Ar'
-            elif (self.Z_imp==10):
-                element = 'Ne'
-            elif (self.Z_imp==4):
-                element = 'Be'
-            elif (self.Z_imp==6):
-                element = 'C'
-            elif (self.Z_imp==74):
-                element = 'W'
-            else:
-                element = None
 
-            self.ln_aBar, self.ln_I = get_screening_constants(self.Z_imp, element)
+
+            self.ln_aBar, self.ln_I = get_screening_constants(self.Z_imp, self.element)
 
             Y_low = getHesslowAvalanchingRate(E_star, Z, Z0_low, nj, T, self.ln_aBar, self.ln_I, B=self.Btor)
             Y_high = getHesslowAvalanchingRate(E_star, Z, Z0_high, nj, T, self.ln_aBar, self.ln_I, B=self.Btor)
@@ -1221,18 +1230,33 @@ class solver0D:
         # Y[0] = Plasma Current [A]
         # Y[1] = RE current [A]
         # Y[2] = RE Kinetic Energy [J]
+        # Y[3] = Pressure [J/m3]
         # primary_sources = [iDreicer, iTritium, iCompton], 0 = off
         # iDreicer = 1 Classical; 2 = Hesslow NN
         # iAvalanche = 1 Rosenbluth-Putvinski * ntot/ne, 2 Simple RP, 3 = Hesslow, 0 = off
 
-        Ip, Ir, Wkin = Y
+        Ip, Ir, Wkin, p = Y
+        
+        nimp = self.get_nimp(t) # impurity density at this time
+        
+        T = self._T_prev  # cache from last call, or self.T0 on first call
 
 
-        # Prescribed Thermal Quench
-        T = self.getTemp(t)
-        nimp = self.get_nimp(t) # impurity density
-        Z = self.getImpurityIonization(T,nimp)
-        ne, ntot = self.getElecDensity(Z,n_imp=nimp)
+        if self.solve_p:
+            for _ in range(5):
+                Z = self.getImpurityIonization(T, nimp)
+                ne, ntot = self.getElecDensity(Z, n_imp=nimp)
+                den = ne + self.ni + nimp + self.nD
+                T = p / (den * const.eV)
+            self._T_prev = T
+            
+        else:
+            T = self.getTemp(t) # Prescribed Thermal Quench
+            Z = self.getImpurityIonization(T,nimp)
+            ne, ntot = self.getElecDensity(Z,n_imp=nimp)
+            
+        
+
         Zeff = (self.ni + self.nD + nimp * Z**2) / ne * self.Zeff_scale
 
         lnA = getCoulombLog(ne,T) # Coulomb logarithm
@@ -1261,26 +1285,78 @@ class solver0D:
             dWkindt = 2 * np.pi * self.R0 * Ir * Epar
         else:
             dWkindt = 0
+            
+        # Pressure
+        if self.solve_p:
+            j = (Ip - Ir) / (np.pi * self.a**2 * self.k) # A/m2, Ohmic heating
+            Prad = Rad.get_Prad(T,ne,self.ni+self.nD,'H') + Rad.get_Prad(T,ne,nimp,self.element) # W/m3
+            dpdt = (self.gamma - 1) * (eta * j**2 - Prad - p/self.tau_loss)  # W/m3, pressure quation
+            if T <= self.Tfloor:
+                dpdt = max(0.0, dpdt) # only allow heating back up once at/below the floor
+        else:
+            dpdt = 0.0
+            
 
-        return [dIpdt, dIrdt, dWkindt]
+        return [dIpdt, dIrdt, dWkindt, dpdt]
     
 
     def solve(self):
         from scipy.integrate import solve_ivp
         t = np.linspace(0,self.tmax,int(1e4)) # times to solve at [s]
+        
+        if (self.Z_imp==18):
+            self.element = 'Ar'
+        elif (self.Z_imp==10):
+            self.element = 'Ne'
+        elif (self.Z_imp==4):
+            self.element = 'Be'
+        elif (self.Z_imp==6):
+            self.element = 'C'
+        elif (self.Z_imp==74):
+            self.element = 'W'
+        else:
+            self.element = None
+        
+        if self.solve_p:
+            print("Temperature is NOT prescribed. Solving pressure equation....")
+            nimp0 = self.get_nimp(0.0) # impurity density at t=0
+            Z0 = self.getImpurityIonization(self.T0, nimp0)
+            ne0, _ = self.getElecDensity(Z0, n_imp=nimp0)
+            den0 = ne0 + self.ni + nimp0 + self.nD
+            p0 = den0 * const.eV * self.T0 # J/m3, pressure IC consistent with T0
+            self._T_prev = self.T0
+        else:
+            p0 = 0.0
+            print("Temperature is prescribed")
+
         sol = solve_ivp(self.dYdt, t_span=(0,max(t)),
-                y0 = [self.I0,self.Ir0,0],
+                y0 = [self.I0,self.Ir0,0,p0],
                 t_eval=t,
                 rtol=1e-8, atol=1e-10) # Solve
         Ip = sol.y[0]
         Ir = sol.y[1]
         Wk = sol.y[2]
+        p = sol.y[3]
 
         # Diagnostics
         if (self.idiag == True): # Calculate detailed output
-            T = self.getTemp(t)
-            Vloop = self.getVloop(T,t) # Volts
             nimp = self.get_nimp(t) # impurity density
+
+            if self.solve_p:
+                # T(t) with the same fixed-point scheme used in dYdt
+                T = np.zeros_like(t)
+                Tg = self.T0
+                for i in range(len(t)):
+                    for _ in range(5):
+                        Zg = self.getImpurityIonization(Tg, nimp[i])
+                        neg, _ = self.getElecDensity(Zg, n_imp=nimp[i])
+                        deng = neg + self.ni + nimp[i] + self.nD
+                        Tg = p[i] / (deng * const.eV)
+                    T[i] = Tg
+            else:
+                T = self.getTemp(t)
+
+            Vloop = self.getVloop(T,t) # Volts
             Z = self.getImpurityIonization(T,nimp)
             ne, ntot = self.getElecDensity(Z,nimp)
             Zeff = (self.ni + self.nD + nimp * Z**2) / ne * self.Zeff_scale
@@ -1317,11 +1393,18 @@ class solver0D:
                 ST = np.zeros_like(E_star)
             if (self.iDreicer == 0):
                 SD = np.zeros_like(E_star)
-
+                
+            
+            if self.solve_p:
+                Prad = Rad.get_Prad(T,ne,self.ni+self.nD,'H') + Rad.get_Prad(T,ne,nimp,self.element) # W/m3
+#                 Prad = Prad * (1+np.tanh((T-self.Tfloor)/2.)) / 2
+            else:
+                Prad = np.zeros_like(E_star)
 
             self.diag = {
                 't': t,
                 'Te': T,
+                'p': p,
                 'Vloop': Vloop,
                 'ne': ne,
                 'Zeff': Zeff,
@@ -1333,7 +1416,8 @@ class solver0D:
                 'gamma_ava': Yav,
                 'SD': SD,
                 'ST': ST,
-                'SC': SC
+                'SC': SC,
+                'Prad': Prad
             }
 
 
